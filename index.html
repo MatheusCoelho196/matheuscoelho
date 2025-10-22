@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Site em Preto</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: #050505;
+        color: #f5f5f5;
+        font-family: "Helvetica Neue", Arial, sans-serif;
+      }
+      main {
+        max-width: 640px;
+        width: 90%;
+        line-height: 1.7;
+        font-size: 1.1rem;
+        letter-spacing: 0.02em;
+      }
+      .cta {
+        margin-top: 2.5rem;
+        display: flex;
+        justify-content: flex-end;
+      }
+      .cta a {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.85rem 1.75rem;
+        background-color: #f5f5f5;
+        color: #050505;
+        text-decoration: none;
+        font-weight: 600;
+        border-radius: 999px;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+      .cta a:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 8px 20px rgba(245, 245, 245, 0.18);
+      }
+      .cta a:focus-visible {
+        outline: 3px solid rgba(245, 245, 245, 0.6);
+        outline-offset: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p>
+        Este espaço acolhe as palavras como quem acende uma luz suave no escuro,
+        permitindo que cada frase respire com calma e revele sua própria
+        cadência. As ideias percorrem o fundo preto como constelações alinhadas
+        com intenção, convidando quem lê a seguir o fluxo do texto sem pressa.
+      </p>
+      <p>
+        À medida que os pensamentos se desdobram, o ritmo permanece contínuo e
+        fluido, preservando um campo aberto para que novas conexões surjam. Cada
+        parágrafo sustenta o próximo, construindo uma narrativa que se mantém
+        firme, mesmo envolta em silêncio.
+      </p>
+      <div class="cta">
+        <a href="#">visitar link</a>
+      </div>
+    </main>
+  </body>
+</html>
