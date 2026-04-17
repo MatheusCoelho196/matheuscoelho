@@ -404,6 +404,16 @@
         <div class="card" data-regime="presumido">Lucro Presumido</div>
       </div>
 
+      <!-- Atividade do MEI (condicional) -->
+      <div class="subsection" id="atividade-mei">
+        <label class="field-label">Atividade do MEI</label>
+        <div class="card-group" id="mei-cards">
+          <div class="card" data-mei="comercio">Comércio/Indústria</div>
+          <div class="card" data-mei="servicos">Serviços</div>
+          <div class="card" data-mei="misto">Comércio + Serviços</div>
+        </div>
+      </div>
+
       <!-- Anexos do Simples Nacional (condicional) -->
       <div class="subsection" id="anexos-simples">
         <label class="field-label">Anexo do Simples Nacional</label>
@@ -468,6 +478,8 @@
           <input type="text" id="receita-12m" class="input-field" placeholder="0,00">
         </div>
       </div>
+
+      <div class="aviso" id="aviso-erro" style="background:#ffe8e8; border-left-color:#8B0000; color:#6b0000;"></div>
 
       <button type="button" class="btn-primary" id="btn-calcular">Calcular</button>
     </section>
@@ -535,8 +547,179 @@
   </div>
 
 <script>
-  // Seleção de regime (um ativo por vez)
+  // ============================================================
+  // DADOS FISCAIS
+  // ============================================================
+
+  // Tabela MEI 2025 (valor fixo mensal)
+  const MEI_VALORES = {
+    comercio: { total: 75.90, inss: 74.40, icms: 1.00, iss: 0, taxa: 0.50, label: 'Comércio/Indústria' },
+    servicos: { total: 80.90, inss: 74.40, icms: 0, iss: 5.00, taxa: 0.50, label: 'Serviços' },
+    misto:    { total: 81.90, inss: 74.40, icms: 1.00, iss: 5.00, taxa: 0.50, label: 'Comércio + Serviços' }
+  };
+
+  // Tabelas Simples Nacional — [limiteSuperior, aliquotaNominal, deducao]
+  const SIMPLES_TABELAS = {
+    I: [
+      [180000,    0.0400, 0],
+      [360000,    0.0730, 5940],
+      [720000,    0.0950, 13860],
+      [1800000,   0.1070, 22500],
+      [3600000,   0.1430, 87300],
+      [4800000,   0.1900, 378000]
+    ],
+    II: [
+      [180000,    0.0450, 0],
+      [360000,    0.0780, 5940],
+      [720000,    0.1000, 13860],
+      [1800000,   0.1120, 22500],
+      [3600000,   0.1470, 85500],
+      [4800000,   0.3000, 720000]
+    ],
+    III: [
+      [180000,    0.0600, 0],
+      [360000,    0.1120, 9360],
+      [720000,    0.1350, 17640],
+      [1800000,   0.1600, 35640],
+      [3600000,   0.2100, 125640],
+      [4800000,   0.3300, 648000]
+    ],
+    IV: [
+      [180000,    0.0450, 0],
+      [360000,    0.0900, 8100],
+      [720000,    0.1020, 12420],
+      [1800000,   0.1400, 39780],
+      [3600000,   0.2200, 183780],
+      [4800000,   0.3300, 828000]
+    ],
+    V: [
+      [180000,    0.1550, 0],
+      [360000,    0.1800, 4500],
+      [720000,    0.1950, 9900],
+      [1800000,   0.2050, 17100],
+      [3600000,   0.2300, 62100],
+      [4800000,   0.3050, 540000]
+    ]
+  };
+
+  // Percentuais de partilha do DAS por anexo e faixa (IRPJ, CSLL, COFINS, PIS, CPP, ICMS/ISS)
+  // Obs: Anexo I e II usam ICMS; III, IV e V usam ISS.
+  const SIMPLES_PARTILHA = {
+    I: [
+      { IRPJ: 0.055, CSLL: 0.035, COFINS: 0.1274, PIS: 0.0276, CPP: 0.4150, ICMS: 0.34 },
+      { IRPJ: 0.055, CSLL: 0.035, COFINS: 0.1274, PIS: 0.0276, CPP: 0.4150, ICMS: 0.34 },
+      { IRPJ: 0.055, CSLL: 0.035, COFINS: 0.1274, PIS: 0.0276, CPP: 0.4200, ICMS: 0.335 },
+      { IRPJ: 0.055, CSLL: 0.035, COFINS: 0.1274, PIS: 0.0276, CPP: 0.4200, ICMS: 0.335 },
+      { IRPJ: 0.055, CSLL: 0.035, COFINS: 0.1274, PIS: 0.0276, CPP: 0.4200, ICMS: 0.335 },
+      { IRPJ: 0.135, CSLL: 0.100, COFINS: 0.2827, PIS: 0.0613, CPP: 0.4210, ICMS: 0 }
+    ],
+    II: [
+      { IRPJ: 0.055, CSLL: 0.035, COFINS: 0.1151, PIS: 0.0249, CPP: 0.3750, IPI: 0.0750, ICMS: 0.32 },
+      { IRPJ: 0.055, CSLL: 0.035, COFINS: 0.1151, PIS: 0.0249, CPP: 0.3750, IPI: 0.0750, ICMS: 0.32 },
+      { IRPJ: 0.055, CSLL: 0.035, COFINS: 0.1151, PIS: 0.0249, CPP: 0.3750, IPI: 0.0750, ICMS: 0.32 },
+      { IRPJ: 0.055, CSLL: 0.035, COFINS: 0.1151, PIS: 0.0249, CPP: 0.3750, IPI: 0.0750, ICMS: 0.32 },
+      { IRPJ: 0.055, CSLL: 0.035, COFINS: 0.1151, PIS: 0.0249, CPP: 0.3750, IPI: 0.0750, ICMS: 0.32 },
+      { IRPJ: 0.085, CSLL: 0.075, COFINS: 0.2096, PIS: 0.0454, CPP: 0.2350, IPI: 0.3500, ICMS: 0 }
+    ],
+    III: [
+      { IRPJ: 0.040, CSLL: 0.035, COFINS: 0.1282, PIS: 0.0278, CPP: 0.4340, ISS: 0.33 },
+      { IRPJ: 0.040, CSLL: 0.035, COFINS: 0.1405, PIS: 0.0305, CPP: 0.4340, ISS: 0.32 },
+      { IRPJ: 0.040, CSLL: 0.035, COFINS: 0.1364, PIS: 0.0296, CPP: 0.4340, ISS: 0.325 },
+      { IRPJ: 0.040, CSLL: 0.035, COFINS: 0.1364, PIS: 0.0296, CPP: 0.4340, ISS: 0.325 },
+      { IRPJ: 0.040, CSLL: 0.035, COFINS: 0.1282, PIS: 0.0278, CPP: 0.4340, ISS: 0.335 },
+      { IRPJ: 0.350, CSLL: 0.150, COFINS: 0.1603, PIS: 0.0347, CPP: 0.3050, ISS: 0 }
+    ],
+    IV: [
+      { IRPJ: 0.1880, CSLL: 0.1520, COFINS: 0.1703, PIS: 0.0369, CPP: 0, ISS: 0.44 },
+      { IRPJ: 0.1980, CSLL: 0.1520, COFINS: 0.1722, PIS: 0.0374, CPP: 0, ISS: 0.43 },
+      { IRPJ: 0.2080, CSLL: 0.1520, COFINS: 0.1664, PIS: 0.0361, CPP: 0, ISS: 0.435 },
+      { IRPJ: 0.1780, CSLL: 0.1920, COFINS: 0.1864, PIS: 0.0403, CPP: 0, ISS: 0.4033 },
+      { IRPJ: 0.1880, CSLL: 0.1920, COFINS: 0.1864, PIS: 0.0403, CPP: 0, ISS: 0.3933 },
+      { IRPJ: 0.5350, CSLL: 0.2150, COFINS: 0.2055, PIS: 0.0445, CPP: 0, ISS: 0 }
+    ],
+    V: [
+      { IRPJ: 0.250, CSLL: 0.150, COFINS: 0.1410, PIS: 0.0305, CPP: 0.2885, ISS: 0.14 },
+      { IRPJ: 0.230, CSLL: 0.150, COFINS: 0.1410, PIS: 0.0305, CPP: 0.2785, ISS: 0.17 },
+      { IRPJ: 0.240, CSLL: 0.150, COFINS: 0.1492, PIS: 0.0323, CPP: 0.2385, ISS: 0.19 },
+      { IRPJ: 0.210, CSLL: 0.150, COFINS: 0.1510, PIS: 0.0327, CPP: 0.2353, ISS: 0.2310 },
+      { IRPJ: 0.230, CSLL: 0.125, COFINS: 0.1410, PIS: 0.0305, CPP: 0.2385, ISS: 0.2350 },
+      { IRPJ: 0.350, CSLL: 0.155, COFINS: 0.1663, PIS: 0.0360, CPP: 0.2912, ISS: 0 }
+    ]
+  };
+
+  // Presunções do Lucro Presumido
+  const PRESUMIDO_ATIVIDADES = {
+    comercio:      { label: 'Comércio/Indústria',       irpj: 0.08, csll: 0.12 },
+    servicos:      { label: 'Serviços em geral',        irpj: 0.32, csll: 0.32 },
+    hospitalares:  { label: 'Serviços hospitalares',    irpj: 0.08, csll: 0.12 },
+    cargas:        { label: 'Transporte de cargas',     irpj: 0.08, csll: 0.12 },
+    passageiros:   { label: 'Transporte de passageiros',irpj: 0.16, csll: 0.12 }
+  };
+
+  // Dicas por regime
+  const DICAS = {
+    mei: [
+      'O DAS do MEI é um valor fixo mensal, não percentual.',
+      'Em 2025 o valor é R$ 75,90 para comércio/indústria + R$ 5,00 de ISS (serviços) ou R$ 1,00 de ICMS.',
+      'O MEI tem limite de faturamento de R$ 81.000/ano.',
+      'Ultrapassando o limite, é necessário migrar para ME.'
+    ],
+    simples: [
+      'A alíquota aumenta conforme o faturamento acumulado nos últimos 12 meses — por isso o Modo Completo é mais preciso.',
+      'O DAS unifica todos os tributos em um único boleto.',
+      'ISS e ICMS podem ter variações conforme o município.'
+    ],
+    presumido: [
+      'No Lucro Presumido os tributos são calculados separadamente e pagos em guias distintas.',
+      'A base de cálculo do IRPJ e CSLL usa percentuais de presunção de lucro que variam por atividade (8% comércio, 32% serviços em geral).',
+      'Indicado para empresas com margem de lucro real acima da margem presumida.'
+    ]
+  };
+
+  // ============================================================
+  // ESTADO
+  // ============================================================
+
+  const estado = {
+    regime: null,
+    mei: null,
+    anexo: null,
+    atividade: null,
+    modo: 'rapido'
+  };
+
+  // ============================================================
+  // FORMATAÇÃO
+  // ============================================================
+
+  const fmtBRL = v => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const fmtPct = v => (v * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 }) + '%';
+
+  function parseMoeda(str) {
+    if (!str) return 0;
+    const s = String(str).replace(/\s/g, '').replace(/R\$/gi, '').trim();
+    if (!s) return 0;
+    // Aceita "1.234,56" e "1234.56" e "1234,56"
+    const temVirgula = s.includes(',');
+    const temPonto = s.includes('.');
+    let normalizado;
+    if (temVirgula && temPonto) {
+      normalizado = s.replace(/\./g, '').replace(',', '.');
+    } else if (temVirgula) {
+      normalizado = s.replace(',', '.');
+    } else {
+      normalizado = s;
+    }
+    const n = parseFloat(normalizado);
+    return isNaN(n) ? 0 : n;
+  }
+
+  // ============================================================
+  // SELEÇÕES (UI)
+  // ============================================================
+
   const regimeCards = document.querySelectorAll('#regime-cards .card');
+  const atividadeMei = document.getElementById('atividade-mei');
   const anexosSimples = document.getElementById('anexos-simples');
   const atividadePresumido = document.getElementById('atividade-presumido');
 
@@ -544,32 +727,37 @@
     card.addEventListener('click', () => {
       regimeCards.forEach(c => c.classList.remove('active'));
       card.classList.add('active');
-
-      const regime = card.dataset.regime;
-      anexosSimples.classList.toggle('visible', regime === 'simples');
-      atividadePresumido.classList.toggle('visible', regime === 'presumido');
+      estado.regime = card.dataset.regime;
+      atividadeMei.classList.toggle('visible', estado.regime === 'mei');
+      anexosSimples.classList.toggle('visible', estado.regime === 'simples');
+      atividadePresumido.classList.toggle('visible', estado.regime === 'presumido');
     });
   });
 
-  // Seleção de anexo (um ativo por vez)
-  const anexoCards = document.querySelectorAll('#anexo-cards .card');
-  anexoCards.forEach(card => {
+  document.querySelectorAll('#mei-cards .card').forEach(card => {
     card.addEventListener('click', () => {
-      anexoCards.forEach(c => c.classList.remove('active'));
+      document.querySelectorAll('#mei-cards .card').forEach(c => c.classList.remove('active'));
       card.classList.add('active');
+      estado.mei = card.dataset.mei;
     });
   });
 
-  // Seleção de atividade (um ativo por vez)
-  const atividadeCards = document.querySelectorAll('#atividade-cards .card');
-  atividadeCards.forEach(card => {
+  document.querySelectorAll('#anexo-cards .card').forEach(card => {
     card.addEventListener('click', () => {
-      atividadeCards.forEach(c => c.classList.remove('active'));
+      document.querySelectorAll('#anexo-cards .card').forEach(c => c.classList.remove('active'));
       card.classList.add('active');
+      estado.anexo = card.dataset.anexo;
     });
   });
 
-  // Toggle de modo
+  document.querySelectorAll('#atividade-cards .card').forEach(card => {
+    card.addEventListener('click', () => {
+      document.querySelectorAll('#atividade-cards .card').forEach(c => c.classList.remove('active'));
+      card.classList.add('active');
+      estado.atividade = card.dataset.atividade;
+    });
+  });
+
   const modoBtns = document.querySelectorAll('#modo-toggle .toggle-btn');
   const campoRbt12 = document.getElementById('campo-rbt12');
 
@@ -577,13 +765,219 @@
     btn.addEventListener('click', () => {
       modoBtns.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      campoRbt12.classList.toggle('visible', btn.dataset.modo === 'completo');
+      estado.modo = btn.dataset.modo;
+      campoRbt12.classList.toggle('visible', estado.modo === 'completo');
     });
   });
 
-  // Botão calcular (sem lógica ainda)
+  // ============================================================
+  // CÁLCULOS
+  // ============================================================
+
+  function calcularMEI(tipo) {
+    const dados = MEI_VALORES[tipo];
+    const partilha = [];
+    partilha.push({ tributo: 'INSS', pct: dados.inss / dados.total, valor: dados.inss });
+    if (dados.iss > 0) partilha.push({ tributo: 'ISS',  pct: dados.iss  / dados.total, valor: dados.iss });
+    if (dados.icms > 0) partilha.push({ tributo: 'ICMS', pct: dados.icms / dados.total, valor: dados.icms });
+    if (dados.taxa > 0) partilha.push({ tributo: 'Taxa administrativa', pct: dados.taxa / dados.total, valor: dados.taxa });
+    return {
+      regimeLabel: 'MEI — ' + dados.label,
+      aliquota: null,
+      valorImposto: dados.total,
+      partilha,
+      valorFixo: true
+    };
+  }
+
+  function faixaSimples(anexo, rbt12) {
+    const tabela = SIMPLES_TABELAS[anexo];
+    for (let i = 0; i < tabela.length; i++) {
+      if (rbt12 <= tabela[i][0]) return i;
+    }
+    return tabela.length - 1; // estourou teto
+  }
+
+  function calcularSimples(anexo, receitaMes, rbt12) {
+    const tabela = SIMPLES_TABELAS[anexo];
+    const idx = faixaSimples(anexo, rbt12);
+    const [, aliqNominal, deducao] = tabela[idx];
+    const baseRbt = rbt12 > 0 ? rbt12 : receitaMes;
+    const aliqEfetiva = Math.max(((baseRbt * aliqNominal) - deducao) / baseRbt, 0);
+    const valorDAS = receitaMes * aliqEfetiva;
+
+    const partilhaPct = SIMPLES_PARTILHA[anexo][idx];
+    const partilha = Object.entries(partilhaPct)
+      .filter(([, pct]) => pct > 0)
+      .map(([tributo, pct]) => ({
+        tributo,
+        pct,
+        valor: valorDAS * pct
+      }));
+
+    return {
+      regimeLabel: 'Simples Nacional — Anexo ' + anexo,
+      aliquota: aliqEfetiva,
+      valorImposto: valorDAS,
+      partilha,
+      faixa: idx + 1
+    };
+  }
+
+  function calcularPresumido(atividade, receita) {
+    const a = PRESUMIDO_ATIVIDADES[atividade];
+    const pis    = receita * 0.0065;
+    const cofins = receita * 0.03;
+    const baseIrpj = receita * a.irpj;
+    const baseCsll = receita * a.csll;
+    const irpj  = baseIrpj * 0.15;
+    const csll  = baseCsll * 0.09;
+    const adicional = baseIrpj > 20000 ? (baseIrpj - 20000) * 0.10 : 0;
+
+    const total = pis + cofins + irpj + csll + adicional;
+
+    const partilha = [
+      { tributo: 'PIS',    pct: receita ? pis / receita    : 0, valor: pis },
+      { tributo: 'COFINS', pct: receita ? cofins / receita : 0, valor: cofins },
+      { tributo: 'IRPJ (15% sobre base presumida)', pct: receita ? irpj / receita : 0, valor: irpj },
+      { tributo: 'CSLL (9% sobre base presumida)',  pct: receita ? csll / receita : 0, valor: csll }
+    ];
+    if (adicional > 0) {
+      partilha.push({
+        tributo: 'Adicional IRPJ (10% sobre excedente de R$ 20.000)',
+        pct: receita ? adicional / receita : 0,
+        valor: adicional
+      });
+    }
+
+    return {
+      regimeLabel: 'Lucro Presumido — ' + a.label,
+      aliquota: receita ? total / receita : 0,
+      valorImposto: total,
+      partilha,
+      adicional
+    };
+  }
+
+  // ============================================================
+  // VALIDAÇÃO E ORQUESTRAÇÃO
+  // ============================================================
+
+  const avisoErro = document.getElementById('aviso-erro');
+
+  function mostrarErro(msg) {
+    avisoErro.textContent = msg;
+    avisoErro.classList.add('visible');
+  }
+
+  function limparErro() {
+    avisoErro.textContent = '';
+    avisoErro.classList.remove('visible');
+  }
+
+  function validar(receitaMes, rbt12) {
+    if (!estado.regime) return 'Selecione um regime tributário.';
+    if (estado.regime === 'mei' && !estado.mei) return 'Selecione a atividade do MEI.';
+    if (estado.regime === 'simples' && !estado.anexo) return 'Selecione o anexo do Simples Nacional.';
+    if (estado.regime === 'presumido' && !estado.atividade) return 'Selecione a atividade para Lucro Presumido.';
+    if (estado.regime !== 'mei' && receitaMes <= 0) return 'Informe a receita do mês.';
+    if (estado.regime === 'simples' && estado.modo === 'completo' && rbt12 <= 0) {
+      return 'Informe a receita acumulada dos últimos 12 meses.';
+    }
+    return null;
+  }
+
+  // ============================================================
+  // RENDERIZAÇÃO
+  // ============================================================
+
+  const secResultado = document.getElementById('resultado');
+  const secDicas = document.getElementById('dicas');
+
+  function renderResultado(receitaMes, resultado) {
+    document.getElementById('res-regime').textContent = resultado.regimeLabel;
+    document.getElementById('res-receita').textContent = resultado.valorFixo
+      ? '—'
+      : fmtBRL(receitaMes);
+    document.getElementById('res-aliquota').textContent = resultado.aliquota == null
+      ? 'Valor fixo'
+      : fmtPct(resultado.aliquota);
+    document.getElementById('res-das').textContent = fmtBRL(resultado.valorImposto);
+
+    const receitaBase = resultado.valorFixo ? 0 : receitaMes;
+    const liquido = receitaBase - resultado.valorImposto;
+    document.getElementById('res-liquido').textContent = resultado.valorFixo
+      ? '—'
+      : fmtBRL(liquido);
+
+    // Tabela de partilha
+    const tbody = document.getElementById('tabela-partilha-body');
+    tbody.innerHTML = '';
+    resultado.partilha.forEach(item => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${item.tributo}</td>
+        <td>${fmtPct(item.pct)}</td>
+        <td>${fmtBRL(item.valor)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    // Aviso Modo Rápido (apenas Simples Nacional)
+    const aviso = document.getElementById('aviso-rapido');
+    if (estado.regime === 'simples' && estado.modo === 'rapido') {
+      aviso.classList.add('visible');
+    } else {
+      aviso.classList.remove('visible');
+    }
+
+    secResultado.style.display = 'block';
+  }
+
+  function renderDicas() {
+    const ul = document.getElementById('dicas-lista');
+    const dicas = DICAS[estado.regime] || [];
+    ul.innerHTML = '';
+    dicas.forEach(d => {
+      const li = document.createElement('li');
+      li.textContent = d;
+      ul.appendChild(li);
+    });
+    secDicas.style.display = 'block';
+  }
+
+  // ============================================================
+  // HANDLER PRINCIPAL
+  // ============================================================
+
   document.getElementById('btn-calcular').addEventListener('click', () => {
-    // Lógica de cálculo a ser implementada
+    limparErro();
+
+    const receitaMes = parseMoeda(document.getElementById('receita-mes').value);
+    const rbt12Input = parseMoeda(document.getElementById('receita-12m').value);
+
+    const erro = validar(receitaMes, rbt12Input);
+    if (erro) {
+      mostrarErro(erro);
+      secResultado.style.display = 'none';
+      secDicas.style.display = 'none';
+      return;
+    }
+
+    let resultado;
+    if (estado.regime === 'mei') {
+      resultado = calcularMEI(estado.mei);
+    } else if (estado.regime === 'simples') {
+      const rbt12 = estado.modo === 'completo' ? rbt12Input : receitaMes * 12;
+      resultado = calcularSimples(estado.anexo, receitaMes, rbt12);
+    } else if (estado.regime === 'presumido') {
+      resultado = calcularPresumido(estado.atividade, receitaMes);
+    }
+
+    renderResultado(receitaMes, resultado);
+    renderDicas();
+
+    secResultado.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 </script>
 </body>
