@@ -372,6 +372,30 @@
   .cor-imposto { color: #8B0000; }
   .cor-liquido { color: #2e7d32; }
 
+  /* Botão secundário */
+  .btn-secondary {
+    width: 100%;
+    padding: 12px 16px;
+    font-size: 15px;
+    font-weight: 600;
+    background: #fff;
+    color: #1a3560;
+    border: 2px solid #1a3560;
+    border-radius: 10px;
+    cursor: pointer;
+    margin-top: 12px;
+    transition: background 0.18s ease;
+  }
+
+  .btn-secondary:hover {
+    background: #f4f7fc;
+  }
+
+  /* Rodapé de impressão (oculto na tela) */
+  .rodape-impressao {
+    display: none;
+  }
+
   /* Responsivo */
   @media (max-width: 600px) {
     body { padding: 12px; }
@@ -382,6 +406,56 @@
     .toggle-btn { flex: 1; padding: 10px; }
     .resultado-item .value { font-size: 18px; }
     .resultado-item.imposto .value { font-size: 22px; }
+  }
+
+  /* Impressão / PDF */
+  @media print {
+    body { padding: 0; background: #fff; color: #000; }
+    .container { max-width: 100%; }
+    header { border-bottom: 2px solid #000; padding: 12px 0; margin-bottom: 16px; }
+
+    /* Oculta tudo que não é resultado */
+    #configuracao,
+    .btn-primary,
+    .btn-secondary,
+    #aviso-erro { display: none !important; }
+
+    section {
+      border: 1px solid #ccc;
+      box-shadow: none;
+      page-break-inside: avoid;
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+
+    .resultado-destaque {
+      background: #fff !important;
+      color: #000 !important;
+      border: 2px solid #1a3560;
+    }
+
+    .resultado-destaque h3 { color: #1a3560; }
+    .resultado-item { background: #f4f7fc !important; color: #000 !important; }
+    .resultado-item .label { color: #1a3560 !important; }
+    .resultado-item.imposto .value { color: #8B0000 !important; }
+    .resultado-item.liquido .value { color: #2e7d32 !important; }
+
+    .tabela-partilha thead { background: #1a3560 !important; color: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+    .rodape-impressao {
+      display: block;
+      margin-top: 24px;
+      padding-top: 12px;
+      border-top: 1px solid #999;
+      font-size: 11px;
+      color: #555;
+      text-align: center;
+    }
+
+    .rodape-impressao .aviso-legal {
+      margin-top: 6px;
+      font-style: italic;
+    }
   }
 </style>
 </head>
@@ -534,6 +608,10 @@
         <strong>Atenção:</strong> Cálculo estimado para faturamento anual até R$ 180.000.
         Para resultado exato, informe a receita acumulada dos últimos 12 meses no Modo Completo.
       </div>
+
+      <div class="aviso" id="aviso-limite-simples" style="background:#ffe8e8; border-left-color:#8B0000; color:#6b0000;"></div>
+
+      <button type="button" class="btn-secondary" id="btn-exportar">Exportar resultado em PDF</button>
     </section>
 
     <!-- SEÇÃO 3: DICAS -->
@@ -542,6 +620,13 @@
       <ul class="dicas-lista" id="dicas-lista">
         <li>Selecione um regime e clique em calcular para ver dicas contextuais.</li>
       </ul>
+
+      <div class="rodape-impressao">
+        <div id="rodape-data"></div>
+        <div class="aviso-legal">
+          Este cálculo é uma estimativa. Consulte um contador para orientação oficial.
+        </div>
+      </div>
     </section>
 
   </div>
@@ -659,22 +744,27 @@
   // Dicas por regime
   const DICAS = {
     mei: [
-      'O DAS do MEI é um valor fixo mensal, não percentual.',
-      'Em 2025 o valor é R$ 75,90 para comércio/indústria + R$ 5,00 de ISS (serviços) ou R$ 1,00 de ICMS.',
-      'O MEI tem limite de faturamento de R$ 81.000/ano.',
-      'Ultrapassando o limite, é necessário migrar para ME.'
+      'O DAS do MEI é um valor fixo mensal, independente do faturamento.',
+      'O limite de faturamento do MEI é R$ 81.000/ano. Ultrapassando esse valor é necessário migrar para ME.',
+      'O MEI não paga IRPJ, CSLL, PIS nem COFINS.',
+      'Mesmo sem movimento no mês, o DAS deve ser pago.'
     ],
     simples: [
-      'A alíquota aumenta conforme o faturamento acumulado nos últimos 12 meses — por isso o Modo Completo é mais preciso.',
-      'O DAS unifica todos os tributos em um único boleto.',
-      'ISS e ICMS podem ter variações conforme o município.'
+      'A alíquota efetiva é calculada sobre a receita acumulada dos últimos 12 meses — por isso o Modo Completo é mais preciso.',
+      'O DAS unifica todos os tributos federais, estaduais e municipais em um único boleto.',
+      'ISS e ICMS podem ter alíquotas adicionais conforme o município ou estado.',
+      'O limite do Simples Nacional é R$ 4,8 milhões/ano.'
     ],
     presumido: [
-      'No Lucro Presumido os tributos são calculados separadamente e pagos em guias distintas.',
-      'A base de cálculo do IRPJ e CSLL usa percentuais de presunção de lucro que variam por atividade (8% comércio, 32% serviços em geral).',
-      'Indicado para empresas com margem de lucro real acima da margem presumida.'
+      'No Lucro Presumido cada tributo é pago em guia separada, em datas distintas.',
+      'PIS e COFINS vencem no 25º dia do mês seguinte.',
+      'IRPJ e CSLL são apurados trimestralmente.',
+      'A base de cálculo usa um percentual de presunção de lucro fixo — pode ser vantajoso se sua margem real for maior.',
+      'ISS é recolhido separadamente à prefeitura do seu município.'
     ]
   };
+
+  const LIMITE_SIMPLES = 4800000;
 
   // ============================================================
   // ESTADO
@@ -692,7 +782,12 @@
   // FORMATAÇÃO
   // ============================================================
 
-  const fmtBRL = v => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const fmtBRL = v => (v || 0).toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
   const fmtPct = v => (v * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 }) + '%';
 
   function parseMoeda(str) {
@@ -820,7 +915,8 @@
       aliquota: aliqEfetiva,
       valorImposto: valorDAS,
       partilha,
-      faixa: idx + 1
+      faixa: idx + 1,
+      rbt12: baseRbt
     };
   }
 
@@ -880,9 +976,12 @@
     if (estado.regime === 'mei' && !estado.mei) return 'Selecione a atividade do MEI.';
     if (estado.regime === 'simples' && !estado.anexo) return 'Selecione o anexo do Simples Nacional.';
     if (estado.regime === 'presumido' && !estado.atividade) return 'Selecione a atividade para Lucro Presumido.';
-    if (estado.regime !== 'mei' && receitaMes <= 0) return 'Informe a receita do mês.';
-    if (estado.regime === 'simples' && estado.modo === 'completo' && rbt12 <= 0) {
-      return 'Informe a receita acumulada dos últimos 12 meses.';
+    if (estado.regime !== 'mei' && receitaMes <= 0) {
+      return 'Informe a receita do mês para calcular.';
+    }
+    if (estado.regime === 'simples' && estado.modo === 'completo') {
+      if (rbt12 <= 0) return 'Informe a receita acumulada dos últimos 12 meses.';
+      if (rbt12 < receitaMes) return 'A receita acumulada deve ser maior que a receita do mês.';
     }
     return null;
   }
@@ -929,6 +1028,16 @@
       aviso.classList.add('visible');
     } else {
       aviso.classList.remove('visible');
+    }
+
+    // Aviso de estouro do teto do Simples Nacional
+    const avisoLimite = document.getElementById('aviso-limite-simples');
+    if (estado.regime === 'simples' && resultado.rbt12 > LIMITE_SIMPLES) {
+      avisoLimite.innerHTML = '<strong>Faturamento acima do limite do Simples Nacional.</strong> '
+        + 'Consulte seu contador.';
+      avisoLimite.classList.add('visible');
+    } else {
+      avisoLimite.classList.remove('visible');
     }
 
     secResultado.style.display = 'block';
@@ -978,6 +1087,23 @@
     renderDicas();
 
     secResultado.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  // ============================================================
+  // EXPORTAÇÃO / IMPRESSÃO
+  // ============================================================
+
+  document.getElementById('btn-exportar').addEventListener('click', () => {
+    if (secResultado.style.display !== 'block') {
+      mostrarErro('Calcule antes de exportar o resultado.');
+      return;
+    }
+    const agora = new Date();
+    const dataStr = agora.toLocaleDateString('pt-BR');
+    const horaStr = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    document.getElementById('rodape-data').textContent =
+      'Consulta realizada em ' + dataStr + ' às ' + horaStr;
+    window.print();
   });
 </script>
 </body>
