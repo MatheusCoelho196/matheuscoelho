@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Analisador Financeiro</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
   * {
     box-sizing: border-box;
@@ -369,6 +371,401 @@
 <footer>
   Analisador Financeiro &middot; Processamento 100% local no navegador
 </footer>
+
+<script>
+'use strict';
+
+// ---------- Configuração do PDF.js ----------
+if (typeof pdfjsLib !== 'undefined' && pdfjsLib.GlobalWorkerOptions) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+// ---------- Estado global ----------
+let arquivosCarregados = []; // { id, file, status }
+let lancamentos = [];        // { data, descricao, valor, arquivo }
+let proximoId = 1;
+
+// ---------- Elementos ----------
+const dropzone       = document.getElementById('dropzone');
+const inputArquivos  = document.getElementById('input-arquivos');
+const botaoSelecionar = document.getElementById('botao-selecionar');
+const botaoProcessar = document.getElementById('botao-processar');
+const listaArquivos  = document.getElementById('lista-arquivos');
+
+// ---------- Upload ----------
+botaoSelecionar.addEventListener('click', (e) => {
+  e.stopPropagation();
+  inputArquivos.click();
+});
+dropzone.addEventListener('click', () => inputArquivos.click());
+
+inputArquivos.addEventListener('change', (e) => {
+  adicionarArquivos(Array.from(e.target.files));
+  inputArquivos.value = '';
+});
+
+['dragenter', 'dragover'].forEach(ev => {
+  dropzone.addEventListener(ev, (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropzone.classList.add('ativo');
+  });
+});
+['dragleave', 'drop'].forEach(ev => {
+  dropzone.addEventListener(ev, (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropzone.classList.remove('ativo');
+  });
+});
+dropzone.addEventListener('drop', (e) => {
+  adicionarArquivos(Array.from(e.dataTransfer.files));
+});
+
+function adicionarArquivos(files) {
+  if (!files || !files.length) return;
+  files.forEach(file => {
+    arquivosCarregados.push({ id: proximoId++, file, status: 'Aguardando' });
+  });
+  renderizarLista();
+}
+
+function renderizarLista() {
+  if (!arquivosCarregados.length) {
+    listaArquivos.innerHTML =
+      '<li class="lista-vazia" id="lista-vazia-msg">Nenhum arquivo carregado.</li>';
+    return;
+  }
+  listaArquivos.innerHTML = arquivosCarregados.map(item => `
+    <li class="item-arquivo" data-id="${item.id}">
+      <span class="nome">${escapeHTML(item.file.name)}</span>
+      <span class="status">${escapeHTML(item.status)}</span>
+    </li>
+  `).join('');
+}
+
+function atualizarStatus(id, status) {
+  const item = arquivosCarregados.find(a => a.id === id);
+  if (!item) return;
+  item.status = status;
+  const el = listaArquivos.querySelector(`[data-id="${id}"] .status`);
+  if (el) el.textContent = status;
+}
+
+function escapeHTML(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+// ---------- Processamento ----------
+botaoProcessar.addEventListener('click', processarArquivos);
+
+async function processarArquivos() {
+  if (!arquivosCarregados.length) {
+    alert('Nenhum arquivo carregado para processar.');
+    return;
+  }
+  lancamentos = [];
+  botaoProcessar.disabled = true;
+
+  for (const item of arquivosCarregados) {
+    atualizarStatus(item.id, 'Processando');
+    try {
+      const ext = (item.file.name.split('.').pop() || '').toLowerCase();
+      let extraidos = [];
+
+      if (ext === 'csv') {
+        extraidos = await processarCSV(item.file);
+      } else if (ext === 'xlsx' || ext === 'xls') {
+        extraidos = await processarXLSX(item.file);
+      } else if (ext === 'ofx') {
+        extraidos = await processarOFX(item.file);
+      } else if (ext === 'txt') {
+        extraidos = await processarTXT(item.file);
+      } else if (ext === 'pdf') {
+        extraidos = await processarPDF(item.file);
+      }
+
+      extraidos.forEach(l => { l.arquivo = item.file.name; });
+      lancamentos.push(...extraidos);
+      console.log(`Arquivo "${item.file.name}": ${extraidos.length} lançamento(s) extraído(s).`);
+      atualizarStatus(item.id, `Concluído (${extraidos.length})`);
+    } catch (err) {
+      console.error(`Erro ao processar ${item.file.name}:`, err);
+      atualizarStatus(item.id, 'Erro');
+    }
+  }
+
+  botaoProcessar.disabled = false;
+  console.log(`Total de lançamentos extraídos: ${lancamentos.length}`, lancamentos);
+}
+
+// ---------- Leitores ----------
+function lerComoTexto(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+    r.readAsText(file);
+  });
+}
+function lerComoArrayBuffer(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+    r.readAsArrayBuffer(file);
+  });
+}
+
+// ---------- Parsers de valor e data ----------
+function parsearValor(str) {
+  if (str == null) return NaN;
+  let s = String(str).trim();
+  if (!s) return NaN;
+  s = s.replace(/R\$\s*/i, '').replace(/\s/g, '');
+
+  let negativo = false;
+  if (/^\(.*\)$/.test(s)) { negativo = true; s = s.slice(1, -1); }
+  if (s.startsWith('-'))  { negativo = true; s = s.slice(1); }
+  if (s.endsWith('-'))    { negativo = true; s = s.slice(0, -1); }
+  if (s.endsWith('D') || s.endsWith('d')) { negativo = true; s = s.slice(0, -1); }
+  if (s.endsWith('C') || s.endsWith('c')) { s = s.slice(0, -1); }
+
+  const temVirgula = s.includes(',');
+  const temPonto   = s.includes('.');
+  if (temVirgula && temPonto) {
+    if (s.lastIndexOf(',') > s.lastIndexOf('.')) {
+      s = s.replace(/\./g, '').replace(',', '.');
+    } else {
+      s = s.replace(/,/g, '');
+    }
+  } else if (temVirgula) {
+    s = s.replace(',', '.');
+  }
+
+  const n = parseFloat(s);
+  if (isNaN(n)) return NaN;
+  return negativo ? -n : n;
+}
+
+function parsearData(str) {
+  if (!str) return '';
+  const s = String(str).trim();
+
+  let m = s.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
+  if (m) {
+    let [, d, mo, y] = m;
+    if (y.length === 2) y = (parseInt(y) > 50 ? '19' : '20') + y;
+    return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  m = s.match(/(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/);
+  if (m) {
+    return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  }
+  m = s.match(/^(\d{4})(\d{2})(\d{2})/);
+  if (m) {
+    return `${m[1]}-${m[2]}-${m[3]}`;
+  }
+  return '';
+}
+
+// ---------- CSV ----------
+async function processarCSV(file) {
+  const texto = await lerComoTexto(file);
+  const linhas = texto.split(/\r?\n/).filter(l => l.trim().length);
+  if (!linhas.length) return [];
+
+  const primeira = linhas[0];
+  const contPonto = (primeira.match(/;/g) || []).length;
+  const contVirg  = (primeira.match(/,/g) || []).length;
+  const contTab   = (primeira.match(/\t/g) || []).length;
+  let sep = ',';
+  if (contPonto >= contVirg && contPonto >= contTab) sep = ';';
+  else if (contTab > contVirg) sep = '\t';
+
+  const parseLinha = (linha) => parseCSVLinha(linha, sep);
+  const cabecalho = parseLinha(linhas[0]).map(h => h.trim().toLowerCase());
+
+  const idxData  = cabecalho.findIndex(h => /data|date|dt\b/.test(h));
+  const idxDesc  = cabecalho.findIndex(h => /desc|hist|memo|lançam|lancam/.test(h));
+  const idxValor = cabecalho.findIndex(h => /valor|value|amount|montante/.test(h));
+
+  const resultado = [];
+  for (let i = 1; i < linhas.length; i++) {
+    const campos = parseLinha(linhas[i]);
+    if (!campos.length) continue;
+
+    const dataStr = idxData  >= 0 ? campos[idxData]  : '';
+    const descStr = idxDesc  >= 0 ? campos[idxDesc]  : campos.slice(1, -1).join(' ');
+    const valStr  = idxValor >= 0 ? campos[idxValor] : campos[campos.length - 1];
+
+    const valor = parsearValor(valStr);
+    if (isNaN(valor)) continue;
+
+    resultado.push({
+      data: parsearData(dataStr),
+      descricao: (descStr || '').trim(),
+      valor
+    });
+  }
+  return resultado;
+}
+
+function parseCSVLinha(linha, sep) {
+  const result = [];
+  let atual = '';
+  let dentroAspas = false;
+  for (let i = 0; i < linha.length; i++) {
+    const c = linha[i];
+    if (c === '"') {
+      if (dentroAspas && linha[i + 1] === '"') { atual += '"'; i++; }
+      else { dentroAspas = !dentroAspas; }
+    } else if (c === sep && !dentroAspas) {
+      result.push(atual);
+      atual = '';
+    } else {
+      atual += c;
+    }
+  }
+  result.push(atual);
+  return result;
+}
+
+// ---------- XLSX ----------
+async function processarXLSX(file) {
+  if (typeof XLSX === 'undefined') {
+    console.warn('SheetJS (XLSX) não carregado.');
+    return [];
+  }
+  const buf = await lerComoArrayBuffer(file);
+  const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+  const resultado = [];
+
+  for (const nomeSheet of wb.SheetNames) {
+    const sheet = wb.Sheets[nomeSheet];
+    const linhas = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
+    if (!linhas.length) continue;
+
+    const cabecalho = linhas[0].map(h => String(h).trim().toLowerCase());
+    const idxData  = cabecalho.findIndex(h => /data|date|dt\b/.test(h));
+    const idxDesc  = cabecalho.findIndex(h => /desc|hist|memo|lançam|lancam/.test(h));
+    const idxValor = cabecalho.findIndex(h => /valor|value|amount|montante/.test(h));
+
+    for (let i = 1; i < linhas.length; i++) {
+      const campos = linhas[i];
+      if (!campos || !campos.length) continue;
+
+      const dataStr = idxData  >= 0 ? campos[idxData]  : '';
+      const descStr = idxDesc  >= 0 ? campos[idxDesc]  : '';
+      const valStr  = idxValor >= 0 ? campos[idxValor] : '';
+
+      const valor = parsearValor(valStr);
+      if (isNaN(valor)) continue;
+
+      resultado.push({
+        data: parsearData(dataStr),
+        descricao: String(descStr || '').trim(),
+        valor
+      });
+    }
+  }
+  return resultado;
+}
+
+// ---------- OFX ----------
+async function processarOFX(file) {
+  const texto = await lerComoTexto(file);
+  const resultado = [];
+  const regexTRN = /<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi;
+  let m;
+  while ((m = regexTRN.exec(texto)) !== null) {
+    const bloco = m[1];
+    const dataStr = extrairTagOFX(bloco, 'DTPOSTED');
+    const valor   = parsearValor(extrairTagOFX(bloco, 'TRNAMT'));
+    const memo    = extrairTagOFX(bloco, 'MEMO') || extrairTagOFX(bloco, 'NAME') || '';
+    if (!isNaN(valor)) {
+      resultado.push({
+        data: parsearData(dataStr),
+        descricao: memo.trim(),
+        valor
+      });
+    }
+  }
+  if (resultado.length) return resultado;
+  return extrairPorRegexGenerico(texto);
+}
+
+function extrairTagOFX(texto, tag) {
+  const re = new RegExp(`<${tag}>([^<\\r\\n]+)`, 'i');
+  const m = texto.match(re);
+  return m ? m[1].trim() : '';
+}
+
+// ---------- TXT ----------
+async function processarTXT(file) {
+  const texto = await lerComoTexto(file);
+  return extrairPorRegexGenerico(texto);
+}
+
+function extrairPorRegexGenerico(texto) {
+  const resultado = [];
+  const linhas = texto.split(/\r?\n/);
+  const regexData  = /(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})|(\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2})|\b(\d{8})\b/;
+  const regexValor = /-?\(?R?\$?\s*\d{1,3}(?:\.\d{3})*,\d{2}\)?|-?\(?\d+\.\d{2}\)?/g;
+
+  for (const linha of linhas) {
+    const mData = linha.match(regexData);
+    if (!mData) continue;
+    const valores = linha.match(regexValor);
+    if (!valores || !valores.length) continue;
+
+    const valorStr = valores[valores.length - 1];
+    const valor = parsearValor(valorStr);
+    if (isNaN(valor)) continue;
+
+    let desc = linha
+      .replace(mData[0], ' ')
+      .replace(valorStr, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    resultado.push({
+      data: parsearData(mData[0]),
+      descricao: desc,
+      valor
+    });
+  }
+  return resultado;
+}
+
+// ---------- PDF ----------
+async function processarPDF(file) {
+  if (typeof pdfjsLib === 'undefined') {
+    console.warn('PDF.js não carregado.');
+    return [];
+  }
+  const buf = await lerComoArrayBuffer(file);
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  let textoCompleto = '';
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const linhasPorY = {};
+    for (const item of content.items) {
+      const y = Math.round(item.transform[5]);
+      linhasPorY[y] = (linhasPorY[y] || '') + item.str + ' ';
+    }
+    const ys = Object.keys(linhasPorY).map(Number).sort((a, b) => b - a);
+    textoCompleto += ys.map(y => linhasPorY[y]).join('\n') + '\n';
+  }
+
+  return extrairPorRegexGenerico(textoCompleto);
+}
+</script>
 
 </body>
 </html>
