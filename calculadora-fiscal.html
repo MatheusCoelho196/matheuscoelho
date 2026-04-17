@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calculadora Fiscal - Impostos para Empresas Brasileiras</title>
+<style>
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
+    background-color: #ffffff;
+    color: #1a3560;
+    line-height: 1.5;
+    padding: 20px;
+  }
+
+  .container {
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  header {
+    text-align: center;
+    padding: 24px 0;
+    border-bottom: 3px solid #1a3560;
+    margin-bottom: 32px;
+  }
+
+  header h1 {
+    color: #1a3560;
+    font-size: 28px;
+    font-weight: 700;
+  }
+
+  header p {
+    color: #555;
+    margin-top: 8px;
+    font-size: 15px;
+  }
+
+  section {
+    background: #fff;
+    border: 1px solid #e0e4ec;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 2px 6px rgba(26, 53, 96, 0.06);
+  }
+
+  .section-title {
+    color: #1a3560;
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #e0e4ec;
+  }
+
+  .field-label {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1a3560;
+    margin-bottom: 8px;
+    margin-top: 16px;
+  }
+
+  /* Cards clicáveis */
+  .card-group {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .card {
+    border: 2px solid #d4dae6;
+    border-radius: 10px;
+    padding: 18px 12px;
+    text-align: center;
+    cursor: pointer;
+    background: #fff;
+    color: #1a3560;
+    font-weight: 600;
+    font-size: 15px;
+    transition: all 0.18s ease;
+    position: relative;
+    user-select: none;
+  }
+
+  .card:hover {
+    border-color: #1a3560;
+    background: #f4f7fc;
+  }
+
+  .card.active {
+    background: #1a3560;
+    color: #fff;
+    border-color: #1a3560;
+    box-shadow: 0 4px 12px rgba(26, 53, 96, 0.25);
+  }
+
+  /* Tooltips */
+  .tooltip {
+    position: relative;
+  }
+
+  .tooltip .tooltip-text {
+    visibility: hidden;
+    opacity: 0;
+    background: #1a3560;
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 12px;
+    font-weight: 400;
+    position: absolute;
+    z-index: 10;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    transition: opacity 0.2s;
+    pointer-events: none;
+  }
+
+  .tooltip .tooltip-text::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: #1a3560 transparent transparent transparent;
+  }
+
+  .tooltip:hover .tooltip-text {
+    visibility: visible;
+    opacity: 1;
+  }
+
+  /* Sub-seções condicionais */
+  .subsection {
+    display: none;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px dashed #d4dae6;
+  }
+
+  .subsection.visible {
+    display: block;
+  }
+
+  /* Toggle modo */
+  .toggle-group {
+    display: inline-flex;
+    border: 2px solid #1a3560;
+    border-radius: 8px;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+
+  .toggle-btn {
+    padding: 10px 20px;
+    background: #fff;
+    color: #1a3560;
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 14px;
+    transition: all 0.18s ease;
+  }
+
+  .toggle-btn.active {
+    background: #1a3560;
+    color: #fff;
+  }
+
+  /* Inputs */
+  .input-wrapper {
+    position: relative;
+    margin-bottom: 12px;
+  }
+
+  .input-field {
+    width: 100%;
+    padding: 12px 14px;
+    font-size: 16px;
+    border: 2px solid #d4dae6;
+    border-radius: 8px;
+    color: #1a3560;
+    background: #fff;
+    transition: border-color 0.18s ease;
+    font-family: inherit;
+  }
+
+  .input-field:focus {
+    outline: none;
+    border-color: #1a3560;
+  }
+
+  .input-hint {
+    display: inline-block;
+    margin-left: 6px;
+    width: 18px;
+    height: 18px;
+    line-height: 16px;
+    border-radius: 50%;
+    background: #1a3560;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    text-align: center;
+    cursor: help;
+    vertical-align: middle;
+  }
+
+  /* Botão calcular */
+  .btn-primary {
+    width: 100%;
+    padding: 16px;
+    font-size: 17px;
+    font-weight: 700;
+    background: #1a3560;
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    margin-top: 20px;
+    transition: background 0.18s ease, transform 0.1s ease;
+    letter-spacing: 0.5px;
+  }
+
+  .btn-primary:hover {
+    background: #264a82;
+  }
+
+  .btn-primary:active {
+    transform: translateY(1px);
+  }
+
+  /* Seção de resultado */
+  #resultado,
+  #dicas {
+    display: none;
+  }
+
+  .resultado-destaque {
+    background: linear-gradient(135deg, #1a3560 0%, #264a82 100%);
+    color: #fff;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+
+  .resultado-destaque h3 {
+    font-size: 14px;
+    font-weight: 400;
+    opacity: 0.85;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 12px;
+  }
+
+  .resultado-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+  }
+
+  .resultado-item {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 14px;
+    border-radius: 8px;
+  }
+
+  .resultado-item .label {
+    font-size: 12px;
+    opacity: 0.85;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .resultado-item .value {
+    font-size: 20px;
+    font-weight: 700;
+    margin-top: 4px;
+  }
+
+  .resultado-item.imposto .value {
+    color: #ffbdbd;
+    font-size: 26px;
+  }
+
+  .resultado-item.liquido .value {
+    color: #b8e6ba;
+    font-size: 22px;
+  }
+
+  /* Tabela de partilha */
+  .tabela-partilha {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 16px;
+    font-size: 14px;
+  }
+
+  .tabela-partilha thead {
+    background: #1a3560;
+    color: #fff;
+  }
+
+  .tabela-partilha th,
+  .tabela-partilha td {
+    padding: 12px 14px;
+    text-align: left;
+    border-bottom: 1px solid #e0e4ec;
+  }
+
+  .tabela-partilha th:nth-child(2),
+  .tabela-partilha td:nth-child(2),
+  .tabela-partilha th:nth-child(3),
+  .tabela-partilha td:nth-child(3) {
+    text-align: right;
+  }
+
+  .tabela-partilha tbody tr:hover {
+    background: #f4f7fc;
+  }
+
+  /* Aviso amarelo */
+  .aviso {
+    display: none;
+    background: #fff8e1;
+    border-left: 4px solid #f9a825;
+    color: #6b4d00;
+    padding: 14px 16px;
+    border-radius: 6px;
+    margin-top: 16px;
+    font-size: 14px;
+  }
+
+  .aviso.visible {
+    display: block;
+  }
+
+  /* Dicas */
+  .dicas-lista {
+    list-style: none;
+    padding: 0;
+  }
+
+  .dicas-lista li {
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    background: #f4f7fc;
+    border-left: 4px solid #1a3560;
+    border-radius: 6px;
+    color: #1a3560;
+    font-size: 14px;
+  }
+
+  /* Cores auxiliares */
+  .cor-imposto { color: #8B0000; }
+  .cor-liquido { color: #2e7d32; }
+
+  /* Responsivo */
+  @media (max-width: 600px) {
+    body { padding: 12px; }
+    header h1 { font-size: 22px; }
+    section { padding: 16px; }
+    .card-group { grid-template-columns: repeat(2, 1fr); }
+    .toggle-group { width: 100%; }
+    .toggle-btn { flex: 1; padding: 10px; }
+    .resultado-item .value { font-size: 18px; }
+    .resultado-item.imposto .value { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+  <div class="container">
+
+    <header>
+      <h1>Calculadora Fiscal</h1>
+      <p>Cálculo de impostos para empresas brasileiras</p>
+    </header>
+
+    <!-- SEÇÃO 1: CONFIGURAÇÃO -->
+    <section id="configuracao">
+      <h2 class="section-title">Configuração</h2>
+
+      <label class="field-label">Regime Tributário</label>
+      <div class="card-group" id="regime-cards">
+        <div class="card" data-regime="mei">MEI</div>
+        <div class="card" data-regime="simples">Simples Nacional</div>
+        <div class="card" data-regime="presumido">Lucro Presumido</div>
+      </div>
+
+      <!-- Anexos do Simples Nacional (condicional) -->
+      <div class="subsection" id="anexos-simples">
+        <label class="field-label">Anexo do Simples Nacional</label>
+        <div class="card-group" id="anexo-cards">
+          <div class="card tooltip" data-anexo="I">
+            Anexo I
+            <span class="tooltip-text">Comércio</span>
+          </div>
+          <div class="card tooltip" data-anexo="II">
+            Anexo II
+            <span class="tooltip-text">Indústria</span>
+          </div>
+          <div class="card tooltip" data-anexo="III">
+            Anexo III
+            <span class="tooltip-text">Serviços (locação, agência, creche)</span>
+          </div>
+          <div class="card tooltip" data-anexo="IV">
+            Anexo IV
+            <span class="tooltip-text">Serviços (construção, vigilância, limpeza)</span>
+          </div>
+          <div class="card tooltip" data-anexo="V">
+            Anexo V
+            <span class="tooltip-text">Serviços (TI, publicidade, medicina, engenharia)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Atividade do Lucro Presumido (condicional) -->
+      <div class="subsection" id="atividade-presumido">
+        <label class="field-label">Atividade</label>
+        <div class="card-group" id="atividade-cards">
+          <div class="card" data-atividade="comercio">Comércio/Indústria</div>
+          <div class="card" data-atividade="servicos">Serviços em geral</div>
+          <div class="card" data-atividade="hospitalares">Serviços hospitalares</div>
+          <div class="card" data-atividade="cargas">Transporte de cargas</div>
+          <div class="card" data-atividade="passageiros">Transporte de passageiros</div>
+        </div>
+      </div>
+
+      <!-- Toggle Modo -->
+      <label class="field-label">Modo de cálculo</label>
+      <div class="toggle-group" id="modo-toggle">
+        <button type="button" class="toggle-btn active" data-modo="rapido">Modo Rápido</button>
+        <button type="button" class="toggle-btn" data-modo="completo">Modo Completo</button>
+      </div>
+
+      <!-- Campos de receita -->
+      <label class="field-label" for="receita-mes">Receita do mês (R$)</label>
+      <div class="input-wrapper">
+        <input type="text" id="receita-mes" class="input-field" placeholder="0,00">
+      </div>
+
+      <div class="subsection" id="campo-rbt12">
+        <label class="field-label" for="receita-12m">
+          Receita acumulada últimos 12 meses (R$)
+          <span class="tooltip input-hint">
+            ?
+            <span class="tooltip-text">Consulte no portal do Simples Nacional ou com seu contador</span>
+          </span>
+        </label>
+        <div class="input-wrapper">
+          <input type="text" id="receita-12m" class="input-field" placeholder="0,00">
+        </div>
+      </div>
+
+      <button type="button" class="btn-primary" id="btn-calcular">Calcular</button>
+    </section>
+
+    <!-- SEÇÃO 2: RESULTADO -->
+    <section id="resultado">
+      <h2 class="section-title">Resultado</h2>
+
+      <div class="resultado-destaque">
+        <h3>Apuração do imposto</h3>
+        <div class="resultado-grid">
+          <div class="resultado-item">
+            <div class="label">Regime</div>
+            <div class="value" id="res-regime">—</div>
+          </div>
+          <div class="resultado-item">
+            <div class="label">Receita</div>
+            <div class="value" id="res-receita">R$ 0,00</div>
+          </div>
+          <div class="resultado-item">
+            <div class="label">Alíquota</div>
+            <div class="value" id="res-aliquota">0,00%</div>
+          </div>
+          <div class="resultado-item imposto">
+            <div class="label">DAS / Imposto</div>
+            <div class="value" id="res-das">R$ 0,00</div>
+          </div>
+          <div class="resultado-item liquido">
+            <div class="label">Valor líquido</div>
+            <div class="value" id="res-liquido">R$ 0,00</div>
+          </div>
+        </div>
+      </div>
+
+      <h3 class="section-title" style="font-size:16px; border:none; margin-top:8px;">Partilha do DAS</h3>
+      <table class="tabela-partilha">
+        <thead>
+          <tr>
+            <th>Tributo</th>
+            <th>% Partilha</th>
+            <th>Valor (R$)</th>
+          </tr>
+        </thead>
+        <tbody id="tabela-partilha-body">
+          <tr>
+            <td colspan="3" style="text-align:center; color:#888;">Nenhum cálculo realizado</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="aviso" id="aviso-rapido">
+        <strong>Atenção:</strong> Cálculo estimado para faturamento anual até R$ 180.000.
+        Para resultado exato, informe a receita acumulada dos últimos 12 meses no Modo Completo.
+      </div>
+    </section>
+
+    <!-- SEÇÃO 3: DICAS -->
+    <section id="dicas">
+      <h2 class="section-title">Observações e Dicas</h2>
+      <ul class="dicas-lista" id="dicas-lista">
+        <li>Selecione um regime e clique em calcular para ver dicas contextuais.</li>
+      </ul>
+    </section>
+
+  </div>
+
+<script>
+  // Seleção de regime (um ativo por vez)
+  const regimeCards = document.querySelectorAll('#regime-cards .card');
+  const anexosSimples = document.getElementById('anexos-simples');
+  const atividadePresumido = document.getElementById('atividade-presumido');
+
+  regimeCards.forEach(card => {
+    card.addEventListener('click', () => {
+      regimeCards.forEach(c => c.classList.remove('active'));
+      card.classList.add('active');
+
+      const regime = card.dataset.regime;
+      anexosSimples.classList.toggle('visible', regime === 'simples');
+      atividadePresumido.classList.toggle('visible', regime === 'presumido');
+    });
+  });
+
+  // Seleção de anexo (um ativo por vez)
+  const anexoCards = document.querySelectorAll('#anexo-cards .card');
+  anexoCards.forEach(card => {
+    card.addEventListener('click', () => {
+      anexoCards.forEach(c => c.classList.remove('active'));
+      card.classList.add('active');
+    });
+  });
+
+  // Seleção de atividade (um ativo por vez)
+  const atividadeCards = document.querySelectorAll('#atividade-cards .card');
+  atividadeCards.forEach(card => {
+    card.addEventListener('click', () => {
+      atividadeCards.forEach(c => c.classList.remove('active'));
+      card.classList.add('active');
+    });
+  });
+
+  // Toggle de modo
+  const modoBtns = document.querySelectorAll('#modo-toggle .toggle-btn');
+  const campoRbt12 = document.getElementById('campo-rbt12');
+
+  modoBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      modoBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      campoRbt12.classList.toggle('visible', btn.dataset.modo === 'completo');
+    });
+  });
+
+  // Botão calcular (sem lógica ainda)
+  document.getElementById('btn-calcular').addEventListener('click', () => {
+    // Lógica de cálculo a ser implementada
+  });
+</script>
+</body>
+</html>
