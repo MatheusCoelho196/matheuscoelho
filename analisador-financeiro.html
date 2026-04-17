@@ -94,6 +94,20 @@
   .card-resumo.entrada { border-left-color: var(--cor-entrada); }
   .card-resumo.saida   { border-left-color: var(--cor-saida); }
   .card-resumo.saldo   { border-left-color: var(--cor-primaria); }
+  .card-resumo.revisao { border-left-color: var(--cor-alerta); }
+
+  .card-resumo.saldo.positivo { border-left-color: var(--cor-entrada); }
+  .card-resumo.saldo.positivo .valor { color: var(--cor-entrada); }
+  .card-resumo.saldo.negativo { border-left-color: var(--cor-saida); }
+  .card-resumo.saldo.negativo .valor { color: var(--cor-saida); }
+
+  .card-resumo.revisao .rotulo { color: #b57f00; }
+  .card-resumo.revisao .valor {
+    font-size: 1rem;
+    line-height: 1.35;
+    color: #b57f00;
+    font-weight: 600;
+  }
 
   .card-resumo .rotulo {
     font-size: 0.85rem;
@@ -111,6 +125,24 @@
   .card-resumo.entrada .valor { color: var(--cor-entrada); }
   .card-resumo.saida   .valor { color: var(--cor-saida); }
   .card-resumo.saldo   .valor { color: var(--cor-primaria); }
+
+  /* Badges de tipo */
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    white-space: nowrap;
+  }
+  .badge.entrada          { background: #e6f4ea; color: var(--cor-entrada); }
+  .badge.saida            { background: #fde7e7; color: var(--cor-saida); }
+  .badge.nao-classificado { background: #fff8e1; color: #b57f00; }
+
+  tr.destaque-revisao { background: #fffdf2; }
+  tr.destaque-revisao:hover { background: #fff7d1; }
 
   /* Drag-and-drop */
   .dropzone {
@@ -317,9 +349,13 @@
         <div class="rotulo">Total de Saídas</div>
         <div class="valor" id="valor-saidas">R$ 0,00</div>
       </div>
-      <div class="card-resumo saldo">
+      <div class="card-resumo saldo" id="card-saldo">
         <div class="rotulo">Saldo do Período</div>
         <div class="valor" id="valor-saldo">R$ 0,00</div>
+      </div>
+      <div class="card-resumo revisao" id="card-revisao" style="display: none;">
+        <div class="rotulo">Revisão manual</div>
+        <div class="valor" id="valor-revisao">0 lançamentos precisam de revisão manual</div>
       </div>
     </div>
   </section>
@@ -498,8 +534,150 @@ async function processarArquivos() {
     }
   }
 
+  lancamentos.forEach(l => { l.tipo = classificarLancamento(l); });
+
+  renderizarTabela();
+  atualizarCardsResumo();
+
   botaoProcessar.disabled = false;
   console.log(`Total de lançamentos extraídos: ${lancamentos.length}`, lancamentos);
+}
+
+// ---------- Classificação ----------
+const PALAVRAS_ENTRADA = [
+  'transferencia recebida', 'transferência recebida',
+  'pagamento recebido', 'pix recebido',
+  'estorno debito', 'estorno débito',
+  'credito', 'crédito',
+  'recebimento', 'deposito', 'depósito',
+  'venda', 'salario', 'salário'
+];
+
+const PALAVRAS_SAIDA = [
+  'estorno credito', 'estorno crédito',
+  'pix enviado', 'ted enviado', 'doc enviado',
+  'debito', 'débito',
+  'pagamento', 'saque', 'tarifa', 'taxa',
+  'dda', 'boleto', 'compra', 'fatura'
+];
+
+function normalizarTexto(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function classificarLancamento(l) {
+  if (typeof l.valor === 'number' && !isNaN(l.valor)) {
+    if (l.valor > 0) return 'entrada';
+    if (l.valor < 0) return 'saida';
+  }
+
+  const desc = normalizarTexto(l.descricao);
+  if (desc) {
+    const candidatas = [
+      ...PALAVRAS_ENTRADA.map(p => ({ p: normalizarTexto(p), tipo: 'entrada' })),
+      ...PALAVRAS_SAIDA.map(p   => ({ p: normalizarTexto(p), tipo: 'saida'   }))
+    ].sort((a, b) => b.p.length - a.p.length);
+
+    for (const { p, tipo } of candidatas) {
+      if (desc.includes(p)) return tipo;
+    }
+  }
+  return 'nao_classificado';
+}
+
+// ---------- Renderização ----------
+const formatadorBRL = new Intl.NumberFormat('pt-BR', {
+  style: 'currency',
+  currency: 'BRL'
+});
+
+function formatarValor(n) {
+  if (typeof n !== 'number' || isNaN(n)) return '-';
+  return formatadorBRL.format(n);
+}
+
+function formatarData(iso) {
+  if (!iso) return '-';
+  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return iso;
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
+function rotuloTipo(tipo) {
+  if (tipo === 'entrada')          return { classe: 'entrada',          texto: 'Entrada' };
+  if (tipo === 'saida')            return { classe: 'saida',            texto: 'Saída' };
+  return                                  { classe: 'nao-classificado', texto: 'Não classificado' };
+}
+
+function renderizarTabela() {
+  const corpo = document.getElementById('corpo-tabela');
+  if (!lancamentos.length) {
+    corpo.innerHTML =
+      '<tr class="linha-vazia"><td colspan="5">Nenhum lançamento para exibir. ' +
+      'Importe arquivos e clique em "Processar Arquivos".</td></tr>';
+    return;
+  }
+
+  const ordenados = lancamentos.slice().sort((a, b) => {
+    if (!a.data) return 1;
+    if (!b.data) return -1;
+    return a.data.localeCompare(b.data);
+  });
+
+  corpo.innerHTML = ordenados.map(l => {
+    const rot = rotuloTipo(l.tipo);
+    const classeValor =
+      l.tipo === 'entrada' ? 'valor-entrada' :
+      l.tipo === 'saida'   ? 'valor-saida'   : '';
+    const classeLinha = l.tipo === 'nao_classificado' ? 'destaque-revisao' : '';
+    return `
+      <tr class="${classeLinha}">
+        <td>${escapeHTML(formatarData(l.data))}</td>
+        <td>${escapeHTML(l.descricao || '-')}</td>
+        <td class="${classeValor}">${escapeHTML(formatarValor(l.valor))}</td>
+        <td><span class="badge ${rot.classe}">${rot.texto}</span></td>
+        <td>${escapeHTML(l.arquivo || '-')}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function atualizarCardsResumo() {
+  let totalEntradas = 0, totalSaidas = 0, naoClassificados = 0;
+  for (const l of lancamentos) {
+    if (l.tipo === 'entrada') {
+      totalEntradas += Math.abs(l.valor);
+    } else if (l.tipo === 'saida') {
+      totalSaidas += Math.abs(l.valor);
+    } else {
+      naoClassificados++;
+    }
+  }
+  const saldo = totalEntradas - totalSaidas;
+
+  document.getElementById('valor-entradas').textContent = formatarValor(totalEntradas);
+  document.getElementById('valor-saidas').textContent   = formatarValor(totalSaidas);
+  document.getElementById('valor-saldo').textContent    = formatarValor(saldo);
+
+  const cardSaldo = document.getElementById('card-saldo');
+  cardSaldo.classList.remove('positivo', 'negativo');
+  if (lancamentos.length) {
+    cardSaldo.classList.add(saldo >= 0 ? 'positivo' : 'negativo');
+  }
+
+  const cardRevisao  = document.getElementById('card-revisao');
+  const valorRevisao = document.getElementById('valor-revisao');
+  if (naoClassificados > 0) {
+    cardRevisao.style.display = '';
+    valorRevisao.textContent =
+      `${naoClassificados} lançamento${naoClassificados > 1 ? 's' : ''} ` +
+      `${naoClassificados > 1 ? 'precisam' : 'precisa'} de revisão manual`;
+  } else {
+    cardRevisao.style.display = 'none';
+  }
 }
 
 // ---------- Leitores ----------
