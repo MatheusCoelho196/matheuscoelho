@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Analisador Financeiro</title>
+<style>
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  :root {
+    --cor-primaria: #1a3560;
+    --cor-entrada: #2e7d32;
+    --cor-saida: #8B0000;
+    --cor-alerta: #f9a825;
+    --cor-fundo: #ffffff;
+    --cor-superficie: #f7f9fc;
+    --cor-borda: #e1e5ec;
+    --cor-texto: #1f2937;
+    --cor-texto-suave: #6b7280;
+    --raio: 10px;
+    --sombra: 0 2px 8px rgba(26, 53, 96, 0.08);
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
+    background-color: var(--cor-fundo);
+    color: var(--cor-texto);
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  header {
+    background-color: var(--cor-primaria);
+    color: #ffffff;
+    padding: 24px 20px;
+    box-shadow: var(--sombra);
+  }
+
+  header .container {
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  header h1 {
+    font-size: 1.6rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  header p {
+    font-size: 0.95rem;
+    opacity: 0.85;
+  }
+
+  main {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 24px 20px 60px;
+  }
+
+  section {
+    margin-bottom: 28px;
+  }
+
+  .titulo-secao {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--cor-primaria);
+    margin-bottom: 12px;
+  }
+
+  /* Cards de resumo */
+  .resumo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+  }
+
+  .card-resumo {
+    background: var(--cor-superficie);
+    border: 1px solid var(--cor-borda);
+    border-radius: var(--raio);
+    padding: 18px 20px;
+    box-shadow: var(--sombra);
+    border-left: 4px solid var(--cor-primaria);
+  }
+
+  .card-resumo.entrada { border-left-color: var(--cor-entrada); }
+  .card-resumo.saida   { border-left-color: var(--cor-saida); }
+  .card-resumo.saldo   { border-left-color: var(--cor-primaria); }
+
+  .card-resumo .rotulo {
+    font-size: 0.85rem;
+    color: var(--cor-texto-suave);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+  }
+
+  .card-resumo .valor {
+    font-size: 1.6rem;
+    font-weight: 700;
+  }
+
+  .card-resumo.entrada .valor { color: var(--cor-entrada); }
+  .card-resumo.saida   .valor { color: var(--cor-saida); }
+  .card-resumo.saldo   .valor { color: var(--cor-primaria); }
+
+  /* Drag-and-drop */
+  .dropzone {
+    border: 2px dashed var(--cor-primaria);
+    border-radius: var(--raio);
+    background: var(--cor-superficie);
+    padding: 36px 20px;
+    text-align: center;
+    transition: background 0.2s, border-color 0.2s;
+    cursor: pointer;
+  }
+
+  .dropzone:hover,
+  .dropzone.ativo {
+    background: #eef3fb;
+    border-color: #234a80;
+  }
+
+  .dropzone .icone {
+    font-size: 2.2rem;
+    color: var(--cor-primaria);
+    margin-bottom: 8px;
+  }
+
+  .dropzone p {
+    margin-bottom: 12px;
+    color: var(--cor-texto-suave);
+  }
+
+  .dropzone strong {
+    color: var(--cor-primaria);
+  }
+
+  .formatos-aceitos {
+    font-size: 0.85rem;
+    color: var(--cor-texto-suave);
+    margin-top: 10px;
+  }
+
+  /* Botões */
+  .botao {
+    display: inline-block;
+    background-color: var(--cor-primaria);
+    color: #ffffff;
+    border: none;
+    padding: 10px 22px;
+    border-radius: var(--raio);
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.05s;
+  }
+
+  .botao:hover {
+    background-color: #234a80;
+  }
+
+  .botao:active {
+    transform: translateY(1px);
+  }
+
+  .botao.secundario {
+    background-color: #ffffff;
+    color: var(--cor-primaria);
+    border: 1px solid var(--cor-primaria);
+  }
+
+  .botao.secundario:hover {
+    background-color: #eef3fb;
+  }
+
+  .acoes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  /* Lista de arquivos */
+  .lista-arquivos {
+    list-style: none;
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .item-arquivo {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    background: var(--cor-superficie);
+    border: 1px solid var(--cor-borda);
+    border-radius: var(--raio);
+    padding: 10px 14px;
+    font-size: 0.92rem;
+  }
+
+  .item-arquivo .nome {
+    font-weight: 500;
+    word-break: break-all;
+  }
+
+  .item-arquivo .status {
+    font-size: 0.82rem;
+    color: var(--cor-texto-suave);
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: #e8eef7;
+    color: var(--cor-primaria);
+    white-space: nowrap;
+  }
+
+  .lista-vazia {
+    color: var(--cor-texto-suave);
+    font-style: italic;
+    font-size: 0.9rem;
+    margin-top: 8px;
+  }
+
+  /* Tabela */
+  .tabela-wrapper {
+    overflow-x: auto;
+    border: 1px solid var(--cor-borda);
+    border-radius: var(--raio);
+    background: var(--cor-fundo);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.92rem;
+  }
+
+  thead {
+    background: var(--cor-primaria);
+    color: #ffffff;
+  }
+
+  th, td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--cor-borda);
+  }
+
+  th {
+    font-weight: 600;
+    font-size: 0.85rem;
+    letter-spacing: 0.3px;
+  }
+
+  tbody tr:hover {
+    background: var(--cor-superficie);
+  }
+
+  td.valor-entrada { color: var(--cor-entrada); font-weight: 600; }
+  td.valor-saida   { color: var(--cor-saida);   font-weight: 600; }
+
+  .linha-vazia td {
+    text-align: center;
+    color: var(--cor-texto-suave);
+    padding: 28px 14px;
+    font-style: italic;
+  }
+
+  /* Rodapé */
+  footer {
+    text-align: center;
+    color: var(--cor-texto-suave);
+    font-size: 0.85rem;
+    padding: 20px;
+    border-top: 1px solid var(--cor-borda);
+    margin-top: 40px;
+  }
+
+  /* Responsivo */
+  @media (max-width: 600px) {
+    header h1 { font-size: 1.3rem; }
+    .card-resumo .valor { font-size: 1.3rem; }
+    .dropzone { padding: 26px 14px; }
+    th, td { padding: 8px 10px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="container">
+    <h1>Analisador Financeiro</h1>
+    <p>Importe seus extratos e visualize entradas, saídas e saldo do período</p>
+  </div>
+</header>
+
+<main>
+
+  <section aria-label="Resumo do período">
+    <div class="resumo-grid">
+      <div class="card-resumo entrada">
+        <div class="rotulo">Total de Entradas</div>
+        <div class="valor" id="valor-entradas">R$ 0,00</div>
+      </div>
+      <div class="card-resumo saida">
+        <div class="rotulo">Total de Saídas</div>
+        <div class="valor" id="valor-saidas">R$ 0,00</div>
+      </div>
+      <div class="card-resumo saldo">
+        <div class="rotulo">Saldo do Período</div>
+        <div class="valor" id="valor-saldo">R$ 0,00</div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-label="Upload de arquivos">
+    <h2 class="titulo-secao">Importar arquivos</h2>
+
+    <div class="dropzone" id="dropzone">
+      <div class="icone">&#8682;</div>
+      <p>Arraste e solte seus arquivos aqui ou <strong>clique para selecionar</strong></p>
+      <input type="file" id="input-arquivos" multiple accept=".csv,.xlsx,.ofx,.txt,.pdf" hidden>
+      <button type="button" class="botao secundario" id="botao-selecionar">Selecionar arquivos</button>
+      <div class="formatos-aceitos">Formatos aceitos: CSV, XLSX, OFX, TXT, PDF</div>
+    </div>
+
+    <ul class="lista-arquivos" id="lista-arquivos">
+      <li class="lista-vazia" id="lista-vazia-msg">Nenhum arquivo carregado.</li>
+    </ul>
+
+    <div class="acoes">
+      <button type="button" class="botao" id="botao-processar">Processar Arquivos</button>
+    </div>
+  </section>
+
+  <section aria-label="Lançamentos">
+    <h2 class="titulo-secao">Lançamentos</h2>
+    <div class="tabela-wrapper">
+      <table id="tabela-lancamentos">
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Descrição</th>
+            <th>Valor</th>
+            <th>Tipo</th>
+            <th>Arquivo</th>
+          </tr>
+        </thead>
+        <tbody id="corpo-tabela">
+          <tr class="linha-vazia">
+            <td colspan="5">Nenhum lançamento para exibir. Importe arquivos e clique em "Processar Arquivos".</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  Analisador Financeiro &middot; Processamento 100% local no navegador
+</footer>
+
+</body>
+</html>
