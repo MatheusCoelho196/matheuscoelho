@@ -309,6 +309,21 @@
     font-style: italic;
   }
 
+  /* Relatório automático */
+  .relatorio-box {
+    background: var(--cor-superficie);
+    border: 1px solid var(--cor-borda);
+    border-radius: var(--raio);
+    padding: 18px 22px;
+    line-height: 1.65;
+    font-size: 0.97rem;
+  }
+  .relatorio-box p + p { margin-top: 10px; }
+  .relatorio-vazio { color: var(--cor-texto-suave); font-style: italic; }
+  .relatorio-box .positivo { color: var(--cor-entrada); }
+  .relatorio-box .negativo { color: var(--cor-saida); }
+  .relatorio-box .atencao  { color: #b57f00; }
+
   /* Rodapé */
   footer {
     text-align: center;
@@ -399,6 +414,18 @@
           </tr>
         </tbody>
       </table>
+    </div>
+  </section>
+
+  <section aria-label="Relatório do período">
+    <h2 class="titulo-secao">Relatório do período</h2>
+    <div class="relatorio-box" id="relatorio-box">
+      <p class="relatorio-vazio">Processe arquivos para gerar o relatório automático.</p>
+    </div>
+    <div class="acoes">
+      <button type="button" class="botao" id="botao-exportar-html">Exportar Relatório HTML</button>
+      <button type="button" class="botao secundario" id="botao-exportar-csv">Exportar CSV</button>
+      <button type="button" class="botao secundario" id="botao-limpar">Limpar Tudo</button>
     </div>
   </section>
 
@@ -538,6 +565,7 @@ async function processarArquivos() {
 
   renderizarTabela();
   atualizarCardsResumo();
+  gerarRelatorio();
 
   botaoProcessar.disabled = false;
   console.log(`Total de lançamentos extraídos: ${lancamentos.length}`, lancamentos);
@@ -679,6 +707,312 @@ function atualizarCardsResumo() {
     cardRevisao.style.display = 'none';
   }
 }
+
+// ---------- Relatório automático ----------
+function calcularTotais() {
+  let totalEntradas = 0, totalSaidas = 0, naoClassificados = 0;
+  for (const l of lancamentos) {
+    if (l.tipo === 'entrada')      totalEntradas   += Math.abs(l.valor);
+    else if (l.tipo === 'saida')   totalSaidas     += Math.abs(l.valor);
+    else                            naoClassificados++;
+  }
+  const datas = lancamentos.map(l => l.data).filter(Boolean).sort();
+  return {
+    totalEntradas,
+    totalSaidas,
+    saldo: totalEntradas - totalSaidas,
+    naoClassificados,
+    numLancamentos: lancamentos.length,
+    numArquivos: new Set(lancamentos.map(l => l.arquivo)).size,
+    dataInicioISO: datas[0] || '',
+    dataFimISO: datas[datas.length - 1] || ''
+  };
+}
+
+function pluralizar(n, singular, plural) {
+  return n === 1 ? singular : plural;
+}
+
+function gerarRelatorio() {
+  const box = document.getElementById('relatorio-box');
+  if (!lancamentos.length) {
+    box.innerHTML =
+      '<p class="relatorio-vazio">Processe arquivos para gerar o relatório automático.</p>';
+    return;
+  }
+
+  const t = calcularTotais();
+  const dataInicio = formatarData(t.dataInicioISO) || '-';
+  const dataFim    = formatarData(t.dataFimISO)    || '-';
+
+  const paragrafoPrincipal =
+    `No período de ${dataInicio} a ${dataFim}, foram identificados ` +
+    `${t.numLancamentos} ${pluralizar(t.numLancamentos, 'lançamento', 'lançamentos')} ` +
+    `em ${t.numArquivos} ${pluralizar(t.numArquivos, 'arquivo', 'arquivos')}. ` +
+    `O total de entradas foi de ${formatarValor(t.totalEntradas)}, ` +
+    `o total de saídas foi de ${formatarValor(t.totalSaidas)}, ` +
+    `resultando em um saldo de ${formatarValor(t.saldo)}.`;
+
+  const linhasExtras = [];
+  if (t.saldo >= 0) {
+    linhasExtras.push('<strong class="positivo">O fluxo do período foi positivo.</strong>');
+  } else {
+    linhasExtras.push('<strong class="negativo">Atenção: o fluxo do período foi negativo.</strong>');
+  }
+  if (t.naoClassificados > 0) {
+    linhasExtras.push(
+      `<strong class="atencao">${t.naoClassificados} ` +
+      `${pluralizar(t.naoClassificados, 'lançamento', 'lançamentos')} ` +
+      `${pluralizar(t.naoClassificados, 'precisa', 'precisam')} de revisão manual.</strong>`
+    );
+  }
+
+  box.innerHTML =
+    `<p>${escapeHTML(paragrafoPrincipal)}</p>` +
+    `<p>${linhasExtras.join(' ')}</p>`;
+}
+
+// ---------- Exportação ----------
+function dataArquivo() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function downloadArquivo(conteudo, nome, mime) {
+  const blob = new Blob([conteudo], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nome;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 100);
+}
+
+function escapeCSV(v) {
+  const s = String(v == null ? '' : v);
+  if (s.includes(';') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+function exportarCSV() {
+  if (!lancamentos.length) {
+    alert('Nenhum lançamento para exportar.');
+    return;
+  }
+  const BOM = '\ufeff';
+  const cabecalho = ['Data', 'Descrição', 'Valor', 'Tipo', 'Arquivo de Origem'];
+  const linhasCSV = [cabecalho.map(escapeCSV).join(';')];
+  for (const l of lancamentos) {
+    const tipoTxt =
+      l.tipo === 'entrada' ? 'Entrada' :
+      l.tipo === 'saida'   ? 'Saída'   : 'Não classificado';
+    const valorStr = (typeof l.valor === 'number' ? l.valor : 0)
+      .toFixed(2).replace('.', ',');
+    linhasCSV.push([
+      formatarData(l.data),
+      l.descricao || '',
+      valorStr,
+      tipoTxt,
+      l.arquivo || ''
+    ].map(escapeCSV).join(';'));
+  }
+  downloadArquivo(
+    BOM + linhasCSV.join('\r\n'),
+    `lancamentos-${dataArquivo()}.csv`,
+    'text/csv;charset=utf-8'
+  );
+}
+
+function exportarHTML() {
+  if (!lancamentos.length) {
+    alert('Nenhum lançamento para exportar.');
+    return;
+  }
+  const t = calcularTotais();
+  const dataInicio = formatarData(t.dataInicioISO) || '-';
+  const dataFim    = formatarData(t.dataFimISO)    || '-';
+  const classeSaldo = t.saldo >= 0 ? 'positivo' : 'negativo';
+
+  const ordenados = lancamentos.slice().sort((a, b) => {
+    if (!a.data) return 1;
+    if (!b.data) return -1;
+    return a.data.localeCompare(b.data);
+  });
+
+  const linhasTabela = ordenados.map(l => {
+    const rot = rotuloTipo(l.tipo);
+    const classeValor =
+      l.tipo === 'entrada' ? 'v-entrada' :
+      l.tipo === 'saida'   ? 'v-saida'   : '';
+    return `    <tr>
+      <td>${escapeHTML(formatarData(l.data))}</td>
+      <td>${escapeHTML(l.descricao || '-')}</td>
+      <td class="${classeValor}">${escapeHTML(formatarValor(l.valor))}</td>
+      <td><span class="badge ${rot.classe}">${rot.texto}</span></td>
+      <td>${escapeHTML(l.arquivo || '-')}</td>
+    </tr>`;
+  }).join('\n');
+
+  const cardRevisaoHTML = t.naoClassificados > 0 ? `
+    <div class="card revisao">
+      <div class="rotulo">Revisão manual</div>
+      <div class="valor-pequeno">${t.naoClassificados} ${pluralizar(t.naoClassificados, 'lançamento', 'lançamentos')} ${pluralizar(t.naoClassificados, 'precisa', 'precisam')} de revisão manual</div>
+    </div>` : '';
+
+  const paragrafoPrincipal =
+    `No período de ${dataInicio} a ${dataFim}, foram identificados ` +
+    `${t.numLancamentos} ${pluralizar(t.numLancamentos, 'lançamento', 'lançamentos')} ` +
+    `em ${t.numArquivos} ${pluralizar(t.numArquivos, 'arquivo', 'arquivos')}. ` +
+    `O total de entradas foi de ${formatarValor(t.totalEntradas)}, ` +
+    `o total de saídas foi de ${formatarValor(t.totalSaidas)}, ` +
+    `resultando em um saldo de ${formatarValor(t.saldo)}.`;
+
+  const linhasExtras = [];
+  if (t.saldo >= 0) {
+    linhasExtras.push('<strong class="positivo">O fluxo do período foi positivo.</strong>');
+  } else {
+    linhasExtras.push('<strong class="negativo">Atenção: o fluxo do período foi negativo.</strong>');
+  }
+  if (t.naoClassificados > 0) {
+    linhasExtras.push(
+      `<strong class="atencao">${t.naoClassificados} ` +
+      `${pluralizar(t.naoClassificados, 'lançamento', 'lançamentos')} ` +
+      `${pluralizar(t.naoClassificados, 'precisa', 'precisam')} de revisão manual.</strong>`
+    );
+  }
+
+  const exportadoEm = new Date().toLocaleString('pt-BR');
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Relatório Financeiro</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #1f2937; background: #fff; margin: 0;
+    padding: 24px; max-width: 1100px; margin: 0 auto;
+  }
+  h1 { color: #1a3560; margin-bottom: 4px; }
+  .subtitulo { color: #6b7280; margin-bottom: 24px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 24px; }
+  .card {
+    background: #f7f9fc; border: 1px solid #e1e5ec;
+    border-left: 4px solid #1a3560; border-radius: 10px; padding: 16px 18px;
+  }
+  .card.entrada { border-left-color: #2e7d32; }
+  .card.saida   { border-left-color: #8B0000; }
+  .card.saldo.positivo { border-left-color: #2e7d32; }
+  .card.saldo.negativo { border-left-color: #8B0000; }
+  .card.revisao { border-left-color: #f9a825; }
+  .card .rotulo {
+    font-size: 0.78rem; color: #6b7280;
+    text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;
+  }
+  .card .valor { font-size: 1.5rem; font-weight: 700; }
+  .card.entrada .valor { color: #2e7d32; }
+  .card.saida   .valor { color: #8B0000; }
+  .card.saldo.positivo .valor { color: #2e7d32; }
+  .card.saldo.negativo .valor { color: #8B0000; }
+  .card.revisao .valor-pequeno { font-weight: 600; color: #b57f00; line-height: 1.35; }
+  .relatorio {
+    background: #f7f9fc; border: 1px solid #e1e5ec;
+    padding: 16px 20px; border-radius: 10px; margin-bottom: 24px; line-height: 1.6;
+  }
+  .relatorio p + p { margin-top: 10px; }
+  .positivo { color: #2e7d32; }
+  .negativo { color: #8B0000; }
+  .atencao  { color: #b57f00; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+  thead { background: #1a3560; color: #fff; }
+  th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid #e1e5ec; }
+  .v-entrada { color: #2e7d32; font-weight: 600; }
+  .v-saida   { color: #8B0000; font-weight: 600; }
+  .badge {
+    display: inline-block; padding: 3px 10px; border-radius: 999px;
+    font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
+  }
+  .badge.entrada          { background: #e6f4ea; color: #2e7d32; }
+  .badge.saida            { background: #fde7e7; color: #8B0000; }
+  .badge.nao-classificado { background: #fff8e1; color: #b57f00; }
+  footer {
+    margin-top: 30px; padding-top: 16px; border-top: 1px solid #e1e5ec;
+    color: #6b7280; font-size: 0.85rem; text-align: center;
+  }
+</style>
+</head>
+<body>
+  <h1>Relatório Financeiro</h1>
+  <p class="subtitulo">Período de ${escapeHTML(dataInicio)} a ${escapeHTML(dataFim)}</p>
+
+  <div class="cards">
+    <div class="card entrada">
+      <div class="rotulo">Total de Entradas</div>
+      <div class="valor">${escapeHTML(formatarValor(t.totalEntradas))}</div>
+    </div>
+    <div class="card saida">
+      <div class="rotulo">Total de Saídas</div>
+      <div class="valor">${escapeHTML(formatarValor(t.totalSaidas))}</div>
+    </div>
+    <div class="card saldo ${classeSaldo}">
+      <div class="rotulo">Saldo do Período</div>
+      <div class="valor">${escapeHTML(formatarValor(t.saldo))}</div>
+    </div>${cardRevisaoHTML}
+  </div>
+
+  <div class="relatorio">
+    <p>${escapeHTML(paragrafoPrincipal)}</p>
+    <p>${linhasExtras.join(' ')}</p>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>Data</th><th>Descrição</th><th>Valor</th><th>Tipo</th><th>Arquivo</th></tr>
+    </thead>
+    <tbody>
+${linhasTabela}
+    </tbody>
+  </table>
+
+  <footer>Exportado em ${escapeHTML(exportadoEm)} &middot; Analisador Financeiro</footer>
+</body>
+</html>`;
+
+  downloadArquivo(
+    html,
+    `relatorio-financeiro-${dataArquivo()}.html`,
+    'text/html;charset=utf-8'
+  );
+}
+
+// ---------- Limpar tudo ----------
+function limparTudo() {
+  if (arquivosCarregados.length || lancamentos.length) {
+    if (!confirm('Deseja limpar todos os arquivos e lançamentos carregados?')) return;
+  }
+  arquivosCarregados = [];
+  lancamentos = [];
+  inputArquivos.value = '';
+
+  renderizarLista();
+  renderizarTabela();
+  atualizarCardsResumo();
+  gerarRelatorio();
+}
+
+document.getElementById('botao-exportar-html').addEventListener('click', exportarHTML);
+document.getElementById('botao-exportar-csv').addEventListener('click', exportarCSV);
+document.getElementById('botao-limpar').addEventListener('click', limparTudo);
 
 // ---------- Leitores ----------
 function lerComoTexto(file) {
