@@ -391,6 +391,104 @@
     background: #f4f7fc;
   }
 
+  /* Upload de extrato */
+  .upload-area {
+    border: 2px dashed #1a3560;
+    border-radius: 10px;
+    padding: 24px 16px;
+    text-align: center;
+    background: #f4f7fc;
+    color: #1a3560;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    margin-bottom: 8px;
+  }
+
+  .upload-area:hover {
+    background: #e8eef9;
+  }
+
+  .upload-area.drag-over {
+    background: #dce6f5;
+    border-color: #2e7d32;
+    border-style: solid;
+  }
+
+  .upload-area .upload-title {
+    font-weight: 700;
+    font-size: 15px;
+    margin-bottom: 4px;
+  }
+
+  .upload-area .upload-sub {
+    font-size: 13px;
+    color: #555;
+    margin-bottom: 10px;
+  }
+
+  .upload-area.processing {
+    opacity: 0.6;
+    pointer-events: none;
+  }
+
+  .upload-btn {
+    display: inline-block;
+    padding: 8px 16px;
+    background: #1a3560;
+    color: #fff;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    margin-top: 4px;
+  }
+
+  .upload-help {
+    font-size: 12px;
+    color: #666;
+    margin-top: 6px;
+    text-align: center;
+  }
+
+  .upload-resumo {
+    display: none;
+    background: #e8f5e9;
+    border-left: 4px solid #2e7d32;
+    color: #1b5e20;
+    padding: 10px 14px;
+    border-radius: 6px;
+    margin-top: 10px;
+    font-size: 13px;
+    position: relative;
+  }
+
+  .upload-resumo.visible { display: block; }
+
+  .upload-resumo .btn-remover {
+    background: none;
+    border: none;
+    color: #8B0000;
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 13px;
+    padding: 0;
+    margin-top: 6px;
+  }
+
+  .upload-resumo .btn-remover:hover { text-decoration: underline; }
+
+  .upload-aviso {
+    display: none;
+    background: #fff8e1;
+    border-left: 4px solid #f9a825;
+    color: #6b4d00;
+    padding: 10px 14px;
+    border-radius: 6px;
+    margin-top: 10px;
+    font-size: 13px;
+  }
+
+  .upload-aviso.visible { display: block; }
+
   /* Rodapé de impressão (oculto na tela) */
   .rodape-impressao {
     display: none;
@@ -418,6 +516,9 @@
     #configuracao,
     .btn-primary,
     .btn-secondary,
+    .upload-area,
+    .upload-resumo,
+    .upload-aviso,
     #aviso-erro { display: none !important; }
 
     section {
@@ -533,6 +634,23 @@
         <button type="button" class="toggle-btn active" data-modo="rapido">Modo Rápido</button>
         <button type="button" class="toggle-btn" data-modo="completo">Modo Completo</button>
       </div>
+
+      <!-- Upload de extrato -->
+      <label class="field-label">Importar Extrato (opcional)</label>
+      <div class="upload-area" id="upload-area">
+        <div class="upload-title">Arraste e solte o extrato aqui</div>
+        <div class="upload-sub">Formatos aceitos: CSV, XLSX, OFX</div>
+        <span class="upload-btn">Selecionar arquivo</span>
+        <input type="file" id="upload-input" accept=".csv,.xlsx,.ofx,.qfx" style="display:none">
+      </div>
+      <div class="upload-help">
+        O valor total de entradas será preenchido automaticamente no campo de receita.
+      </div>
+      <div class="upload-resumo" id="upload-resumo">
+        <div id="upload-resumo-texto"></div>
+        <button type="button" class="btn-remover" id="upload-remover">✕ Remover extrato</button>
+      </div>
+      <div class="upload-aviso" id="upload-aviso"></div>
 
       <!-- Campos de receita -->
       <label class="field-label" for="receita-mes">Receita do mês (R$)</label>
@@ -1104,6 +1222,299 @@
     document.getElementById('rodape-data').textContent =
       'Consulta realizada em ' + dataStr + ' às ' + horaStr;
     window.print();
+  });
+
+  // ============================================================
+  // UPLOAD DE EXTRATO
+  // ============================================================
+
+  const uploadArea = document.getElementById('upload-area');
+  const uploadInput = document.getElementById('upload-input');
+  const uploadResumo = document.getElementById('upload-resumo');
+  const uploadResumoTexto = document.getElementById('upload-resumo-texto');
+  const uploadAviso = document.getElementById('upload-aviso');
+  const uploadRemover = document.getElementById('upload-remover');
+  const receitaMesInput = document.getElementById('receita-mes');
+
+  const COLUNAS_VALOR = ['valor', 'value', 'credito', 'crédito', 'entrada', 'receita', 'amount'];
+  const SHEETJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+  let sheetjsPromise = null;
+
+  function carregarSheetJS() {
+    if (typeof XLSX !== 'undefined') return Promise.resolve();
+    if (sheetjsPromise) return sheetjsPromise;
+    sheetjsPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = SHEETJS_URL;
+      script.onload = () => resolve();
+      script.onerror = () => {
+        sheetjsPromise = null;
+        reject(new Error('Não foi possível carregar o leitor de XLSX. Verifique sua conexão.'));
+      };
+      document.head.appendChild(script);
+    });
+    return sheetjsPromise;
+  }
+
+  function mostrarAvisoUpload(msg) {
+    uploadAviso.textContent = msg;
+    uploadAviso.classList.add('visible');
+  }
+
+  function limparAvisoUpload() {
+    uploadAviso.textContent = '';
+    uploadAviso.classList.remove('visible');
+  }
+
+  function limparResumo() {
+    uploadResumo.classList.remove('visible');
+    uploadResumoTexto.textContent = '';
+  }
+
+  // Parse numérico tolerante a formatos "1.234,56", "1234.56", "(123,45)" (negativo)
+  function parseNumero(raw) {
+    if (raw == null) return NaN;
+    if (typeof raw === 'number') return raw;
+    let s = String(raw).trim();
+    if (!s) return NaN;
+    let negativo = false;
+    if (/^\(.*\)$/.test(s)) { negativo = true; s = s.slice(1, -1); }
+    s = s.replace(/R\$/gi, '').replace(/\s/g, '');
+    if (/-$/.test(s)) { negativo = true; s = s.slice(0, -1); }
+    if (/^-/.test(s)) { negativo = true; s = s.slice(1); }
+    const temVirgula = s.includes(',');
+    const temPonto = s.includes('.');
+    let normalizado;
+    if (temVirgula && temPonto) {
+      normalizado = s.replace(/\./g, '').replace(',', '.');
+    } else if (temVirgula) {
+      normalizado = s.replace(',', '.');
+    } else {
+      normalizado = s;
+    }
+    const n = parseFloat(normalizado);
+    if (isNaN(n)) return NaN;
+    return negativo ? -n : n;
+  }
+
+  function normalizarCabecalho(h) {
+    return String(h || '')
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .trim();
+  }
+
+  function encontrarIndiceValor(cabecalhos) {
+    const normalizados = cabecalhos.map(normalizarCabecalho);
+    const alvos = COLUNAS_VALOR.map(normalizarCabecalho);
+    for (let i = 0; i < normalizados.length; i++) {
+      if (alvos.includes(normalizados[i])) return i;
+    }
+    // busca parcial
+    for (let i = 0; i < normalizados.length; i++) {
+      if (alvos.some(a => normalizados[i].includes(a))) return i;
+    }
+    return -1;
+  }
+
+  // Soma entradas a partir de um array 2D (primeira linha = cabeçalho)
+  function somarEntradas(linhas) {
+    if (!linhas || linhas.length === 0) return { total: 0, count: 0 };
+
+    let header = linhas[0] || [];
+    let corpo = linhas.slice(1);
+    let idx = encontrarIndiceValor(header);
+
+    if (idx === -1) {
+      // Fallback: detectar primeira coluna com valores numéricos positivos
+      const numCols = Math.max(...linhas.map(l => l.length));
+      for (let c = 0; c < numCols; c++) {
+        let positivos = 0;
+        for (const linha of linhas) {
+          const v = parseNumero(linha[c]);
+          if (!isNaN(v) && v > 0) positivos++;
+        }
+        if (positivos > 0) {
+          idx = c;
+          corpo = linhas; // sem pular header
+          break;
+        }
+      }
+    }
+
+    if (idx === -1) return { total: 0, count: 0 };
+
+    let total = 0;
+    let count = 0;
+    for (const linha of corpo) {
+      const v = parseNumero(linha[idx]);
+      if (!isNaN(v) && v > 0) {
+        total += v;
+        count++;
+      }
+    }
+    return { total, count };
+  }
+
+  // CSV — detecta separador, respeita campos entre aspas
+  function parseCSV(texto) {
+    // Remove BOM
+    texto = texto.replace(/^\uFEFF/, '');
+    // Detecta separador pela primeira linha
+    const primeiraLinha = texto.split(/\r?\n/, 1)[0] || '';
+    const countVirg = (primeiraLinha.match(/,/g) || []).length;
+    const countPv   = (primeiraLinha.match(/;/g) || []).length;
+    const sep = countPv > countVirg ? ';' : ',';
+
+    const linhas = [];
+    let campo = '';
+    let linha = [];
+    let dentroAspas = false;
+
+    for (let i = 0; i < texto.length; i++) {
+      const c = texto[i];
+      if (dentroAspas) {
+        if (c === '"') {
+          if (texto[i + 1] === '"') { campo += '"'; i++; }
+          else { dentroAspas = false; }
+        } else {
+          campo += c;
+        }
+      } else {
+        if (c === '"') { dentroAspas = true; }
+        else if (c === sep) { linha.push(campo); campo = ''; }
+        else if (c === '\n') { linha.push(campo); linhas.push(linha); linha = []; campo = ''; }
+        else if (c === '\r') { /* ignora */ }
+        else { campo += c; }
+      }
+    }
+    if (campo.length > 0 || linha.length > 0) {
+      linha.push(campo);
+      linhas.push(linha);
+    }
+    return linhas.filter(l => l.length > 0 && !(l.length === 1 && l[0] === ''));
+  }
+
+  async function processarCSV(file) {
+    const texto = await file.text();
+    const linhas = parseCSV(texto);
+    return somarEntradas(linhas);
+  }
+
+  async function processarXLSX(file) {
+    await carregarSheetJS();
+    const buffer = await file.arrayBuffer();
+    const wb = XLSX.read(buffer, { type: 'array' });
+    let melhor = { total: 0, count: 0 };
+    for (const nome of wb.SheetNames) {
+      const sheet = wb.Sheets[nome];
+      const linhas = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      const resultado = somarEntradas(linhas);
+      if (resultado.count > melhor.count) melhor = resultado;
+    }
+    return melhor;
+  }
+
+  async function processarOFX(file) {
+    const texto = await file.text();
+    const regex = /<TRNAMT>\s*([^<\r\n]+)/gi;
+    let total = 0;
+    let count = 0;
+    let m;
+    while ((m = regex.exec(texto)) !== null) {
+      const v = parseNumero(m[1]);
+      if (!isNaN(v) && v > 0) {
+        total += v;
+        count++;
+      }
+    }
+    return { total, count };
+  }
+
+  function extensao(nome) {
+    const parte = nome.split('.').pop();
+    return (parte || '').toLowerCase();
+  }
+
+  async function processarArquivo(file) {
+    limparAvisoUpload();
+    limparResumo();
+    uploadArea.classList.add('processing');
+
+    try {
+      const ext = extensao(file.name);
+      let resultado;
+      if (ext === 'csv' || ext === 'txt') {
+        resultado = await processarCSV(file);
+      } else if (ext === 'xlsx' || ext === 'xls') {
+        resultado = await processarXLSX(file);
+      } else if (ext === 'ofx' || ext === 'qfx') {
+        resultado = await processarOFX(file);
+      } else {
+        mostrarAvisoUpload('Formato não suportado. Use CSV, XLSX ou OFX.');
+        return;
+      }
+
+      if (!resultado || resultado.total <= 0 || resultado.count === 0) {
+        mostrarAvisoUpload('Nenhuma entrada identificada no extrato. Verifique o arquivo ou informe o valor manualmente.');
+        return;
+      }
+
+      // Preenche campo de receita (formato PT-BR)
+      receitaMesInput.value = resultado.total.toLocaleString('pt-BR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+
+      uploadResumoTexto.innerHTML =
+        'Extrato importado: <strong>' + file.name + '</strong> — '
+        + resultado.count + ' lançamento' + (resultado.count === 1 ? '' : 's')
+        + ' encontrado' + (resultado.count === 1 ? '' : 's')
+        + ' — Total de entradas: <strong>' + fmtBRL(resultado.total) + '</strong>';
+      uploadResumo.classList.add('visible');
+
+    } catch (err) {
+      mostrarAvisoUpload('Não foi possível processar o arquivo: ' + err.message);
+    } finally {
+      uploadArea.classList.remove('processing');
+    }
+  }
+
+  // Eventos
+  uploadArea.addEventListener('click', () => uploadInput.click());
+
+  uploadInput.addEventListener('change', (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) processarArquivo(file);
+    uploadInput.value = '';
+  });
+
+  ['dragenter', 'dragover'].forEach(ev => {
+    uploadArea.addEventListener(ev, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      uploadArea.classList.add('drag-over');
+    });
+  });
+
+  ['dragleave', 'drop'].forEach(ev => {
+    uploadArea.addEventListener(ev, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      uploadArea.classList.remove('drag-over');
+    });
+  });
+
+  uploadArea.addEventListener('drop', (e) => {
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) processarArquivo(file);
+  });
+
+  uploadRemover.addEventListener('click', (e) => {
+    e.stopPropagation();
+    receitaMesInput.value = '';
+    limparResumo();
+    limparAvisoUpload();
   });
 </script>
 </body>
